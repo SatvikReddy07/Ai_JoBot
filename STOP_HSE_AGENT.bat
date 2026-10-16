@@ -1,0 +1,5 @@
+@echo off
+title Stopping HSE Career Agent
+cd /d "%~dp0"
+powershell.exe -NoProfile -ExecutionPolicy Bypass -File "%~dp0scripts\stop_app.ps1"
+pause

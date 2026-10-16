@@ -1,0 +1,33 @@
+# Environment & Dependencies
+backend/venv/
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+.pytest_cache/
+
+# Node
+frontend/node_modules/
+frontend/.next/
+frontend/out/
+
+# Local databases & run data
+data/hse_career.db*
+data/*_backup.db*
+data/cv/
+data/*.lock
+data/*.pid
+data/logs/
+*.log
+
+
+# Windows & OS metadata
+Thumbs.db
+ehthumbs.db
+Desktop.ini
+.DS_Store
+
+# Environment files
+.env
+.env.local
+.env.*.local

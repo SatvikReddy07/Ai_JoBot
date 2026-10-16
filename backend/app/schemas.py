@@ -1,0 +1,264 @@
+from typing import List, Optional, Any, Dict
+from datetime import datetime
+from pydantic import BaseModel, Field, ConfigDict
+
+# ---- PHASE 2 SCHEMAS ----
+class MasterCVResponse(BaseModel):
+    id: int
+    filename: str
+    file_type: str
+    file_size: int
+    extracted_at: datetime
+    is_active: bool
+
+    model_config = ConfigDict(from_attributes=True)
+
+class EmploymentHistoryItem(BaseModel):
+    company: str
+    role: str
+    location: Optional[str] = None
+    highlights: List[str] = []
+    source: Optional[str] = "verified_profile"
+
+class UserProfileResponse(BaseModel):
+    id: int
+    name: str
+    current_role: str
+    current_company: str
+    location: str
+    experience_years: int
+    summary: Optional[str] = None
+    employment_history: List[EmploymentHistoryItem] = []
+    qualifications: List[str] = []
+    skills: List[str] = []
+    certifications: List[str] = []
+    achievements: List[str] = []
+    target_countries: List[str] = []
+    target_titles: List[str] = []
+    consent_given_for_ai: bool = False
+    last_updated_at: datetime
+    cv: Optional[MasterCVResponse] = None
+
+    model_config = ConfigDict(from_attributes=True)
+
+
+class CVUploadResponse(BaseModel):
+    message: str
+    cv_id: int
+    filename: str
+    profile: UserProfileResponse
+
+    model_config = ConfigDict(from_attributes=True)
+
+class UserProfileUpdate(BaseModel):
+
+    name: Optional[str] = None
+    current_role: Optional[str] = None
+    current_company: Optional[str] = None
+    location: Optional[str] = None
+    experience_years: Optional[int] = None
+    summary: Optional[str] = None
+    employment_history: Optional[List[EmploymentHistoryItem]] = None
+    qualifications: Optional[List[str]] = None
+    skills: Optional[List[str]] = None
+    certifications: Optional[List[str]] = None
+    achievements: Optional[List[str]] = None
+    target_countries: Optional[List[str]] = None
+    target_titles: Optional[List[str]] = None
+    consent_given_for_ai: Optional[bool] = None
+
+class UserConsentToggle(BaseModel):
+    consent_given: bool
+
+class AIJobAssessmentResponse(BaseModel):
+    id: int
+    job_id: int
+    job_hash: str
+    match_score: int
+    application_priority: str
+    career_growth_score: int
+    career_growth_summary: Optional[str] = None
+    matching_skills: List[str] = []
+    missing_requirements: List[str] = []
+    qualification_alignment: List[str] = []
+    experience_alignment: List[str] = []
+    industry_alignment: List[str] = []
+    visa_relocation_considerations: Optional[str] = None
+    reasons_to_apply: List[str] = []
+    reasons_to_reconsider: List[str] = []
+    evidence_references: Dict[str, Any] = {}
+    model_used: str
+    engine_used: str
+    created_at: datetime
+
+    model_config = ConfigDict(from_attributes=True)
+
+class AIUsageStatsResponse(BaseModel):
+    daily_used: int
+    daily_limit: int
+    remaining: int
+    cached_today: int
+    date: str
+    model: str
+    api_key_configured: bool
+
+# ---- JOB SCHEMAS ----
+class JobBase(BaseModel):
+    source: str
+    source_job_id: str
+    company: str
+    title: str
+    normalized_title: Optional[str] = None
+    location: str
+    city: Optional[str] = None
+    country: Optional[str] = None
+    employment_type: str = "Unknown"
+    is_permanent_fulltime: bool = False
+    description: str
+    raw_description_html: Optional[str] = None
+    url: str
+    posted_date: Optional[datetime] = None
+
+class JobResponse(BaseModel):
+    id: int
+    source: str
+    source_job_id: str
+    company: str
+    title: str
+    normalized_title: Optional[str] = None
+    location: str
+    city: Optional[str] = None
+    country: Optional[str] = None
+    employment_type: str
+    is_permanent_fulltime: bool
+    description: str
+    raw_description_html: Optional[str] = None
+    url: str
+    posted_date: Optional[datetime] = None
+    discovered_at: datetime
+    last_verified_at: datetime
+    is_active: bool
+    match_score: int
+    match_level: str
+    match_reasons: Optional[List[str]] = []
+    matching_qualifications: Optional[List[str]] = []
+    matching_experience: Optional[List[str]] = []
+    matching_skills: Optional[List[str]] = []
+    missing_requirements: Optional[List[str]] = []
+    location_suitability: Optional[str] = None
+    sponsorship_status: str
+    application_status: str
+    application_notes: Optional[str] = None
+    is_saved: bool
+    ai_assessment: Optional[AIJobAssessmentResponse] = None
+
+    model_config = ConfigDict(from_attributes=True)
+
+class JobListResponse(BaseModel):
+    total: int
+    page: int
+    page_size: int
+    total_pages: int
+    items: List[JobResponse]
+
+class JobStatusUpdate(BaseModel):
+    status: str
+    notes: Optional[str] = None
+
+class JobSaveToggle(BaseModel):
+    is_saved: bool
+
+# ---- EMPLOYER BOARD SCHEMAS ----
+class EmployerBoardBase(BaseModel):
+    company_name: str
+    platform: str  # 'greenhouse' or 'lever'
+    board_token: str
+    is_enabled: bool = True
+
+class EmployerBoardCreate(EmployerBoardBase):
+    pass
+
+class EmployerBoardUpdate(BaseModel):
+    company_name: Optional[str] = None
+    platform: Optional[str] = None
+    board_token: Optional[str] = None
+    is_enabled: Optional[bool] = None
+
+class EmployerBoardResponse(EmployerBoardBase):
+    id: int
+    created_at: datetime
+    last_searched_at: Optional[datetime] = None
+    last_status: Optional[str] = None
+    last_job_count: int = 0
+
+    model_config = ConfigDict(from_attributes=True)
+
+# ---- SEARCH PREFERENCE & SETTINGS ----
+class ScoringWeights(BaseModel):
+    experience_seniority: int = 25
+    hse_technical_skills: int = 25
+    qualifications: int = 15
+    industry_relevance: int = 15
+    location_international: int = 15
+    employment_preferences: int = 5
+
+class SettingsResponse(BaseModel):
+    profile_name: str
+    profile_current_role: str
+    profile_experience_years: int
+    target_countries: List[str]
+    target_titles: List[str]
+    min_match_score: int
+    scoring_weights: ScoringWeights
+    auto_search_hour: int
+    auto_search_minute: int
+    updated_at: datetime
+    gemini_model: Optional[str] = "gemini-2.5-flash"
+    ai_daily_limit: Optional[int] = 50
+    api_key_configured: Optional[bool] = False
+
+class SettingsUpdate(BaseModel):
+    profile_name: Optional[str] = None
+    profile_current_role: Optional[str] = None
+    profile_experience_years: Optional[int] = None
+    target_countries: Optional[List[str]] = None
+    target_titles: Optional[List[str]] = None
+    min_match_score: Optional[int] = None
+    scoring_weights: Optional[ScoringWeights] = None
+    auto_search_hour: Optional[int] = None
+    auto_search_minute: Optional[int] = None
+    gemini_model: Optional[str] = None
+    ai_daily_limit: Optional[int] = None
+
+# ---- SEARCH RUN & HISTORY ----
+class SearchRunResponse(BaseModel):
+    status: str
+    boards_searched: int
+    jobs_found: int
+    jobs_new: int
+    jobs_updated: int
+    message: str
+
+class SearchHistoryResponse(BaseModel):
+    id: int
+    started_at: datetime
+    completed_at: Optional[datetime] = None
+    status: str
+    jobs_found: int
+    jobs_new: int
+    jobs_updated: int
+    boards_searched: int
+    error_message: Optional[str] = None
+
+    model_config = ConfigDict(from_attributes=True)
+
+# ---- DASHBOARD STATS ----
+class DashboardStatsResponse(BaseModel):
+    total_jobs: int
+    new_jobs_today: int
+    excellent_matches: int
+    strong_matches: int
+    saved_opportunities: int
+    active_applications: int
+    last_successful_search: Optional[datetime] = None
+    ai_analyzed_count: int = 0
