@@ -62,23 +62,40 @@ class HSEJobMatcher:
         "global", "corporate", "regional", "head of", "director", "vice president", "vp",
         "lead", "apac", "emea", "group"
     ]
-    HSE_CORE_TITLES = [
-        "hse", "ehs", "she", "she&s", "hsw", "health and safety", "workplace health",
-        "environment, health and safety", "safety and environment", "governance"
+    HSE_CORE_TITLE_PATTERNS = [
+        r"\bhse\b", r"\behs\b", r"\bshe\b", r"\bshe&s\b", r"\bhsw\b", r"\bqhse\b",
+        r"\bhealth\s*(and|&)\s*safety\b", r"\bworkplace\s*health\b", r"\bworkplace\s*safety\b",
+        r"\boccupational\s*health\b", r"\boccupational\s*safety\b", r"\benvironment(al)?\s*health\b",
+        r"\bsafety\s*(and|&)\s*environment\b", r"\bprocess\s*safety\b", r"\bindustrial\s*safety\b",
+        r"\bsafety\s*manager\b", r"\bsafety\s*director\b", r"\bsafety\s*lead\b", r"\bhead\s*of\s*safety\b",
+        r"\bsustainability\s*(and|&)\s*safety\b", r"\benvironmental\s*manager\b",
+        r"\bsafety\s*assurance\b", r"\bsafety\s*governance\b", r"\behs\s*manager\b", r"\bhse\s*manager\b"
     ]
 
-    # Technical Skills Keywords & Labels
+    # Explicit Non-HSE Domain Titles (Strictly Disqualified from High HSE Matches)
+    NON_HSE_DOMAINS = [
+        r"\bsoftware\b", r"\bfrontend\b", r"\bbackend\b", r"\bfull\s*stack\b", r"\bdevops\b",
+        r"\bcloud\b", r"\bdata\s*engineer\b", r"\bdata\s*science\b", r"\bdata\s*analyst\b",
+        r"\bfp&a\b", r"\bfinance\b", r"\baccounting\b", r"\bsocial\s*media\b", r"\brecruiting\b",
+        r"\brecruiter\b", r"\btalent\b", r"\bdeal\s*desk\b", r"\bsales\s*(director|manager|lead|rep)\b",
+        r"\brevenue\b", r"\brevops\b", r"\baccount\s*executive\b", r"\bcustomer\s*success\b",
+        r"\bcustomer\s*advocacy\b", r"\brenewals\b", r"\bproduct\s*manager\b",
+        r"\bengineering\s*manager\b", r"\bsolutions?\s*architect\b", r"\bsecurity\s*engineer\b",
+        r"\bpublic\s*sector\b", r"\bcommercial\b"
+    ]
+
+    # Technical Skills Keywords & Labels (Strictly HSE-Contextualized)
     SKILL_MAP = {
-        "ISO 14001 / ISO 45001": [r"\biso\s*14001\b", r"\biso\s*45001\b", r"\bohsas\s*18001\b", r"\bmanagement systems\b"],
-        "HSE Governance & Assurance": [r"\bgovernance\b", r"\bassurance\b", r"\bcompliance\b", r"\bframework\b", r"\bpolicies\b"],
-        "Incident Investigation & RCA": [r"\bincident investigation\b", r"\broot cause\b", r"\brca\b", r"\bfive whys\b", r"\bcapa\b"],
-        "Risk Assessment & Management": [r"\brisk assessment\b", r"\brisk management\b", r"\bhazop\b", r"\bhira\b", r"\bjha\b"],
-        "Contractor Safety Management": [r"\bcontractor safety\b", r"\bcontractor management\b", r"\bpermit to work\b", r"\bptw\b"],
-        "HSE Audits & Statutory Compliance": [r"\bhse audit\b", r"\bsafety audit\b", r"\bstatutory compliance\b", r"\bregulatory compliance\b"],
-        "Sustainability & ESG": [r"\bsustainability\b", r"\besg\b", r"\bcarbon\b", r"\bscope 1\b", r"\bgreenhouse gas\b"],
-        "Safety Culture & Employee Wellness": [r"\bsafety culture\b", r"\bwellness\b", r"\bbehavioral safety\b", r"\bbbs\b", r"\bwellbeing\b"],
-        "HSE Analytics & KPIs": [r"\bkpi\b", r"\bmetrics\b", r"\bperformance reporting\b", r"\bltif\b", r"\btrir\b", r"\bdashboard\b"],
-        "APAC / Multi-site Leadership": [r"\bmulti-site\b", r"\bmulti site\b", r"\bplants\b", r"\bapac\b", r"\bglobal\b", r"\bregional\b"]
+        "ISO 14001 / ISO 45001": [r"\biso\s*14001\b", r"\biso\s*45001\b", r"\bohsas\s*18001\b", r"\bhse\s*management\s*systems?\b"],
+        "HSE Governance & Assurance": [r"\b(hse|ehs|she|safety)\s*governance\b", r"\b(hse|ehs|safety)\s*assurance\b", r"\b(statutory|regulatory|safety)\s*compliance\b", r"\bsafety\s*framework\b"],
+        "Incident Investigation & RCA": [r"\bincident\s*investigation\b", r"\broot\s*cause\s*(analysis|rca)\b", r"\bfive\s*whys\b", r"\bcapa\b", r"\baccident\s*investigation\b"],
+        "Risk Assessment & Management": [r"\bhazop\b", r"\bhira\b", r"\bjha\b", r"\bjob\s*safety\s*analysis\b", r"\bprocess\s*safety\b", r"\b(safety|hse)\s*risk\s*assessment\b"],
+        "Contractor Safety Management": [r"\bcontractor\s*safety\b", r"\bpermit\s*to\s*work\b", r"\bptw\b", r"\bcontractor\s*ehs\b"],
+        "HSE Audits & Statutory Compliance": [r"\bhse\s*audits?\b", r"\bsafety\s*audits?\b", r"\bohs\s*statutory\b", r"\bepa\s*compliance\b", r"\bosha\b"],
+        "Sustainability & ESG": [r"\bsustainability\s*(and|&)\s*hse\b", r"\besg\s*reporting\b", r"\bcarbon\s*neutrality\b", r"\bscope\s*[123]\b", r"\bgreenhouse\s*gas\b"],
+        "Safety Culture & Employee Wellness": [r"\bsafety\s*culture\b", r"\bbehavior(al)?\s*safety\b", r"\bbbs\b", r"\bzero\s*harm\b", r"\boccupational\s*wellbeing\b"],
+        "HSE Analytics & KPIs": [r"\bltif\b", r"\btrir\b", r"\bltifr\b", r"\blost\s*time\s*injur(y|ies)\b", r"\btotal\s*recordable\b", r"\bsafety\s*kpis?\b"],
+        "APAC / Multi-site Leadership": [r"\bmulti-site\s*(safety|hse|ehs|plants?)\b", r"\bplants?\b", r"\bapac\s*(hse|ehs|safety|regional)\b", r"\bglobal\s*(hse|she|ehs|safety)\b"]
     }
 
     # Qualification Keywords
@@ -157,31 +174,65 @@ class HSEJobMatcher:
         matching_skills: List[str] = []
         missing_requirements: List[str] = []
 
+        # Check HSE Domain Relevance
+        is_core_hse_title = any(re.search(pat, title_lower) for pat in self.HSE_CORE_TITLE_PATTERNS)
+        is_non_hse_domain = any(re.search(pat, title_lower) for pat in self.NON_HSE_DOMAINS)
+        core_hse_desc_count = sum(1 for pat in self.HSE_CORE_TITLE_PATTERNS if re.search(pat, desc_lower))
+
+        # 0. Strict Domain Gate
+        # If title is explicitly non-HSE (Software, Sales, Finance, Devops, etc.) and lacks core HSE title:
+        if is_non_hse_domain and not is_core_hse_title:
+            return MatchResult(
+                score=12,
+                level="Low Match",
+                reasons=["Domain Disqualification: Role belongs to non-HSE domain (Software, Sales, Finance, Revenue, or Corporate Operations)."],
+                matching_qualifications=[],
+                matching_experience=[],
+                matching_skills=[],
+                missing_requirements=["Health, Safety & Environment (HSE/EHS) leadership domain scope is absent."],
+                location_suitability="N/A (Disqualified domain)",
+                sponsorship_status="Not Evaluated"
+            )
+
+        # If role has zero HSE keywords in both title and description:
+        if not is_core_hse_title and core_hse_desc_count == 0:
+            return MatchResult(
+                score=15,
+                level="Low Match",
+                reasons=["Domain Warning: Position does not contain Health, Safety or Environmental (HSE) responsibilities."],
+                matching_qualifications=[],
+                matching_experience=[],
+                matching_skills=[],
+                missing_requirements=["No explicit Health, Safety & Environment (HSE/EHS) scope identified in title or job description."],
+                location_suitability="N/A (Non-HSE role)",
+                sponsorship_status="Not Evaluated"
+            )
+
         # 1. Experience & Seniority (Max: 25)
         w_exp = weights.get("experience_seniority", 25)
         exp_score = 0
         is_global_regional = any(k in title_lower for k in self.GLOBAL_REGIONAL_TITLES)
-        is_core_hse = any(k in title_lower for k in self.HSE_CORE_TITLES)
 
-        if is_global_regional and ("manager" in title_lower or "head" in title_lower or "director" in title_lower):
-            exp_score = w_exp
-            matching_experience.append("Executive/Global/Regional HSE Leadership role directly matches your 18+ years APAC & Global background")
-            reasons.append(f"Seniority (+{exp_score}): Executive/Global HSE Leadership scope.")
-        elif "senior" in title_lower and ("manager" in title_lower or "lead" in title_lower):
-            exp_score = int(w_exp * 0.92)
-            matching_experience.append("Senior HSE Manager / Lead role matching your extensive management record")
-            reasons.append(f"Seniority (+{exp_score}): Senior HSE Management level.")
-        elif "manager" in title_lower or "lead" in title_lower or "head" in title_lower:
-            exp_score = int(w_exp * 0.80)
-            matching_experience.append("HSE Manager position providing direct operational leadership")
-            reasons.append(f"Seniority (+{exp_score}): HSE Management position.")
-        elif is_core_hse:
-            exp_score = int(w_exp * 0.65)
-            matching_experience.append("Core HSE function alignable with leadership scope")
-            reasons.append(f"Seniority (+{exp_score}): HSE functional match.")
+        if is_core_hse_title:
+            if is_global_regional and ("manager" in title_lower or "head" in title_lower or "director" in title_lower or "lead" in title_lower):
+                exp_score = w_exp
+                matching_experience.append("Executive/Global/Regional HSE Leadership role directly matches your 18+ years APAC & Global background")
+                reasons.append(f"Seniority (+{exp_score}): Executive/Global HSE Leadership scope.")
+            elif "senior" in title_lower and ("manager" in title_lower or "lead" in title_lower or "director" in title_lower):
+                exp_score = int(w_exp * 0.92)
+                matching_experience.append("Senior HSE Manager / Lead role matching your extensive management record")
+                reasons.append(f"Seniority (+{exp_score}): Senior HSE Management level.")
+            elif "manager" in title_lower or "lead" in title_lower or "head" in title_lower or "director" in title_lower:
+                exp_score = int(w_exp * 0.84)
+                matching_experience.append("HSE Manager position providing direct operational leadership")
+                reasons.append(f"Seniority (+{exp_score}): HSE Management position.")
+            else:
+                exp_score = int(w_exp * 0.65)
+                matching_experience.append("Core HSE function alignable with leadership scope")
+                reasons.append(f"Seniority (+{exp_score}): HSE functional match.")
         else:
-            exp_score = int(w_exp * 0.40)
-            missing_requirements.append("Job title does not clearly designate a senior HSE leadership tier")
+            exp_score = int(w_exp * 0.20)
+            missing_requirements.append("Job title does not clearly designate an HSE leadership tier")
 
         # 2. HSE Technical Skills (Max: 25)
         w_skills = weights.get("hse_technical_skills", 25)

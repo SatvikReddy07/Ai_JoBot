@@ -1,5 +1,6 @@
 import json
 import logging
+import re
 from datetime import datetime, timezone
 from typing import Dict, Any, List, Optional
 from sqlalchemy.orm import Session
@@ -12,6 +13,7 @@ from .matcher import HSEJobMatcher
 from .notification_service import check_and_notify_high_match_job
 
 logger = logging.getLogger(__name__)
+_matcher = HSEJobMatcher()
 
 # Default reputable multinational employer boards using Greenhouse and Lever
 DEFAULT_BOARDS = [
@@ -76,19 +78,33 @@ def init_search_preferences(db: Session) -> SearchPreference:
 def is_hse_relevant(title: str, description: str) -> bool:
     """
     Check if role is relevant to HSE, Workplace Safety, Environment, or ESG leadership.
+    Uses regex word boundaries and rejects non-HSE titles to prevent false positive discovery.
     """
-    text = f"{title} {description[:800]}".lower()
+    title_lower = title.lower()
+    desc_sample = description[:1200].lower()
 
-    # Core keywords that signify HSE relevance
-    hse_keywords = [
-        "hse", "ehs", "she", "she&s", "hsw", "health and safety", "health & safety",
-        "workplace health", "workplace safety", "occupational safety", "environmental health",
-        "safety manager", "safety lead", "safety director", "head of safety",
-        "esg manager", "sustainability manager", "sustainability and safety",
-        "incident investigation", "statutory safety", "iso 45001", "iso 14001"
+    # Reject non-HSE domain titles (e.g., Software Engineering Manager, Sales Lead) unless explicitly HSE
+    is_core_hse_title = any(re.search(pat, title_lower) for pat in _matcher.HSE_CORE_TITLE_PATTERNS)
+    is_non_hse = any(re.search(pat, title_lower) for pat in _matcher.NON_HSE_DOMAINS)
+    if is_non_hse and not is_core_hse_title:
+        return False
+
+    # Title check first
+    if is_core_hse_title:
+        return True
+
+    # Description check using word-boundary regex patterns
+    hse_desc_patterns = [
+        r"\bhse\b", r"\behs\b", r"\bshe&s\b", r"\bshe\s+(manager|director|lead|governance)\b",
+        r"\bhsw\b", r"\bqhse\b",
+        r"\bhealth\s*(and|&)\s*safety\b", r"\bworkplace\s*health\b", r"\bworkplace\s*safety\b",
+        r"\boccupational\s*(health|safety)\b", r"\benvironment(al)?\s*health\b",
+        r"\bsafety\s*(manager|lead|director|governance|assurance|framework|culture)\b",
+        r"\bhead\s*of\s*safety\b", r"\bincident\s*investigation\b", r"\bprocess\s*safety\b",
+        r"\biso\s*45001\b", r"\biso\s*14001\b", r"\bhazop\b", r"\bltif\b", r"\btrir\b"
     ]
 
-    return any(k in text for k in hse_keywords)
+    return any(re.search(p, desc_sample) for p in hse_desc_patterns)
 
 async def run_discovery_service(db: Session, board_id: Optional[int] = None) -> Dict[str, Any]:
     """

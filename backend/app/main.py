@@ -248,8 +248,8 @@ def health_check():
     return {
         "status": "ok",
         "app": "HSE Career Agent",
-        "version": "2.0.0",
-        "phase": 2,
+        "version": "3.1.0",
+        "phase": 3,
         "timestamp": datetime.utcnow().isoformat()
     }
 

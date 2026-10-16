@@ -19,6 +19,7 @@ data/packages/
 data/generated/
 data/*.zip
 data/exports/
+data/qa_scratch/
 data/*.lock
 data/*.pid
 data/logs/

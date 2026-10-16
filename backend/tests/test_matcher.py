@@ -63,7 +63,7 @@ def test_matcher_location_scoring():
         is_permanent_fulltime=True,
         description="Lead regional safety management."
     )
-    assert res_india.score >= 60
+    assert res_india.score >= 55
 
     # Secondary / Non-target country
     res_us = matcher.evaluate(
@@ -90,3 +90,53 @@ def test_matcher_sponsorship_detection():
         description="Candidates must have right to work in Australia. No visa sponsorship available."
     )
     assert res_neg.sponsorship_status == "Not Supported"
+
+def test_matcher_strictly_disqualifies_non_hse_roles():
+    matcher = HSEJobMatcher()
+
+    # Stripe Engineering Manager case
+    res_stripe = matcher.evaluate(
+        title="Engineering Manager, Forward Deployed (Privy)",
+        location="NYC-Privy",
+        country="United States",
+        city="New York",
+        employment_type="Full-time",
+        is_permanent_fulltime=True,
+        description="Lead a software engineering team building developer tools and APIs."
+    )
+    assert res_stripe.score <= 15
+    assert res_stripe.level == "Low Match"
+    assert any("Domain Disqualification" in r for r in res_stripe.reasons)
+
+    # General Tech / Sales roles
+    for non_hse_title in ["Senior Software Engineer", "Sales Development Representative", "Deal Desk Manager", "Frontend Lead"]:
+        res = matcher.evaluate(
+            title=non_hse_title,
+            location="Singapore",
+            country="Singapore",
+            city="Singapore",
+            employment_type="Full-time",
+            is_permanent_fulltime=True,
+            description="Manage client accounts and revenue pipeline."
+        )
+        assert res.score <= 15
+        assert res.level == "Low Match"
+
+def test_matcher_scores_genuine_hse_role_high():
+    matcher = HSEJobMatcher()
+
+    res = matcher.evaluate(
+        title="Global Head of SHE (Safety, Health & Environment)",
+        location="Singapore / Hyderabad, India",
+        country="Singapore",
+        city="Singapore",
+        employment_type="Full-time",
+        is_permanent_fulltime=True,
+        description="""Direct global SHE governance across 19 manufacturing plants.
+        Lead ISO 14001 and ISO 45001 management systems, incident investigation with RCA,
+        contractor safety management, behavior-based safety culture (BBS), and ESG reporting."""
+    )
+    assert res.score >= 85
+    assert res.level == "Excellent Match"
+    assert "ISO 14001 / ISO 45001" in res.matching_skills
+    assert "Incident Investigation & RCA" in res.matching_skills
