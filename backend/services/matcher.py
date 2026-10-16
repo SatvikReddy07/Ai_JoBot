@@ -1,6 +1,15 @@
 import re
 from typing import Dict, List, Any, Optional, Tuple
 
+class OccupationalCategory:
+    HSE_LEADERSHIP = "HSE / EHS / SHE / HSW Leadership"
+    PROCESS_INDUSTRIAL_SAFETY = "Process Safety / Industrial Safety"
+    ENVIRONMENTAL_COMPLIANCE = "Environmental Compliance / Environmental Management"
+    SUSTAINABILITY_ESG = "Sustainability / ESG with HSE Relevance"
+    CORPORATE_WORKPLACE_SAFETY = "Corporate / Workplace Safety"
+    ADJACENT = "Adjacent but potentially relevant"
+    UNRELATED = "Unrelated"
+
 class MatchResult:
     def __init__(
         self,
@@ -12,7 +21,9 @@ class MatchResult:
         matching_skills: List[str],
         missing_requirements: List[str],
         location_suitability: str,
-        sponsorship_status: str
+        sponsorship_status: str,
+        occupational_category: str = OccupationalCategory.UNRELATED,
+        score_breakdown: Optional[Dict[str, int]] = None
     ):
         self.score = score
         self.level = level
@@ -23,6 +34,8 @@ class MatchResult:
         self.missing_requirements = missing_requirements
         self.location_suitability = location_suitability
         self.sponsorship_status = sponsorship_status
+        self.occupational_category = occupational_category
+        self.score_breakdown = score_breakdown or {}
 
     def to_dict(self) -> Dict[str, Any]:
         return {
@@ -34,19 +47,21 @@ class MatchResult:
             "matching_skills": self.matching_skills,
             "missing_requirements": self.missing_requirements,
             "location_suitability": self.location_suitability,
-            "sponsorship_status": self.sponsorship_status
+            "sponsorship_status": self.sponsorship_status,
+            "occupational_category": self.occupational_category,
+            "score_breakdown": self.score_breakdown
         }
 
 class HSEJobMatcher:
     """
-    Local, rules-based matching engine for Raghunath Reddy's HSE leadership profile.
-    Total score: 100 points.
-    - Experience & Seniority: 25 pts
-    - HSE Technical Skills: 25 pts
-    - Educational Qualifications: 15 pts
-    - Industry Relevance: 15 pts
-    - Location & International Eligibility: 15 pts
-    - Employment Preferences: 5 pts
+    Explainable, rules-based matching engine for Raghunath Reddy's HSE executive profile.
+    Total Score: 100 points maximum across 6 explainable dimensions:
+    - 1. Occupational Relevance: 25 pts (Mandatory relevance gate)
+    - 2. Seniority Alignment: 20 pts (Executive & multi-site leadership)
+    - 3. HSE Technical Competencies: 25 pts (ISO 14001/45001, RCA, PSM, Audits)
+    - 4. Industry Alignment: 10 pts (Manufacturing, chemical, operations)
+    - 5. Educational Qualifications: 10 pts (M.Tech Env, B.Tech Mech, Safety Diploma, Lead Auditor)
+    - 6. Location & International Preference: 10 pts (India, Singapore, Europe, Australia)
     """
 
     # Exclusions
@@ -62,6 +77,7 @@ class HSEJobMatcher:
         "global", "corporate", "regional", "head of", "director", "vice president", "vp",
         "lead", "apac", "emea", "group"
     ]
+
     HSE_CORE_TITLE_PATTERNS = [
         r"\bhse\b", r"\behs\b", r"\bshe\b", r"\bshe&s\b", r"\bhsw\b", r"\bqhse\b",
         r"\bhealth\s*(and|&)\s*safety\b", r"\bworkplace\s*health\b", r"\bworkplace\s*safety\b",
@@ -72,7 +88,7 @@ class HSEJobMatcher:
         r"\bsafety\s*assurance\b", r"\bsafety\s*governance\b", r"\behs\s*manager\b", r"\bhse\s*manager\b"
     ]
 
-    # Explicit Non-HSE Domain Titles (Strictly Disqualified from High HSE Matches)
+    # Explicit Non-HSE Domain Titles (Strictly Disqualified from HSE Matches)
     NON_HSE_DOMAINS = [
         r"\bsoftware\b", r"\bfrontend\b", r"\bbackend\b", r"\bfull\s*stack\b", r"\bdevops\b",
         r"\bcloud\b", r"\bdata\s*engineer\b", r"\bdata\s*science\b", r"\bdata\s*analyst\b",
@@ -81,7 +97,7 @@ class HSEJobMatcher:
         r"\brevenue\b", r"\brevops\b", r"\baccount\s*executive\b", r"\bcustomer\s*success\b",
         r"\bcustomer\s*advocacy\b", r"\brenewals\b", r"\bproduct\s*manager\b",
         r"\bengineering\s*manager\b", r"\bsolutions?\s*architect\b", r"\bsecurity\s*engineer\b",
-        r"\bpublic\s*sector\b", r"\bcommercial\b"
+        r"\bpublic\s*sector\b", r"\bcommercial\b", r"\bit\s*project\s*manager\b"
     ]
 
     # Technical Skills Keywords & Labels (Strictly HSE-Contextualized)
@@ -102,8 +118,8 @@ class HSEJobMatcher:
     QUAL_MAP = {
         "M.Tech / Master's in Environmental Engineering": [r"\bm\.?tech\b", r"\bmaster'?s\b", r"\benvironmental engineering\b", r"\bpost graduate\b"],
         "B.Tech / Bachelor's in Mechanical Engineering": [r"\bb\.?tech\b", r"\bbachelor'?s\b", r"\bmechanical\b", r"\bengineering degree\b"],
-        "MBA / Business Leadership": [r"\bmba\b", r"\bhuman resources\b", r"\bbusiness administration\b", r"\bmanagement degree\b"],
-        "Diploma in Industrial Safety": [r"\bindustrial safety\b", r"\bnebosh\b", r"\bdiploma in safety\b", r"\bcsp\b", r"\bidosh\b", r"\bdis\b"]
+        "Diploma in Industrial Safety": [r"\bindustrial safety\b", r"\bnebosh\b", r"\bdiploma in safety\b", r"\bcsp\b", r"\bidosh\b", r"\bdis\b"],
+        "Auditor / Lead Auditor Credentials": [r"\blead\s*auditor\b", r"\biso\s*auditor\b", r"\bauditor\b", r"\birqs\b", r"\blrqa\b"]
     }
 
     # Industry Keywords
@@ -127,7 +143,6 @@ class HSEJobMatcher:
         """Check if job should be excluded as non-leadership, junior, or freelance."""
         full_text = f"{title} {description[:500]} {employment_type}".lower()
 
-        # Check employment type
         if "freelance" in full_text or "intern" in full_text:
             return True, "Excluded: Freelance/Internship"
         if "contract" in employment_type.lower() and not ("leadership" in full_text or "manager" in full_text):
@@ -135,11 +150,109 @@ class HSEJobMatcher:
 
         for pattern in self.EXCLUDED_PATTERNS:
             if re.search(pattern, title.lower()):
-                # Only exclude if not also high-level manager
                 if not any(w in title.lower() for w in ["manager", "head", "director", "lead"]):
                     return True, f"Excluded: Junior or officer role matching {pattern}"
 
         return False, ""
+
+    def classify_occupational_relevance(self, title: str, description: str) -> Tuple[str, bool, str]:
+        """
+        Classifies a vacancy into 1 of 7 occupational categories using title, responsibilities, and requirements.
+        Returns: (category, is_relevant, explanation)
+        """
+        title_lower = title.lower()
+        desc_sample = description[:2500].lower()
+        full_text = f"{title_lower}\n{desc_sample}"
+
+        is_core_hse_title = any(re.search(pat, title_lower) for pat in self.HSE_CORE_TITLE_PATTERNS)
+        is_non_hse_domain = any(re.search(pat, title_lower) for pat in self.NON_HSE_DOMAINS)
+
+        # 1. Non-HSE Domain Check (Disqualified from HSE leadership)
+        if is_non_hse_domain and not is_core_hse_title:
+            return (
+                OccupationalCategory.UNRELATED,
+                False,
+                "Excluded: Non-HSE domain (Software/IT, Sales, Finance, Revenue, or Corporate Operations)."
+            )
+
+        # 2. Process Safety / Industrial Safety
+        process_pats = [
+            r"\bprocess\s*safety\b", r"\bpsm\b", r"\bhazop\b", r"\bhira\b",
+            r"\bloss\s*prevention\b", r"\bchemical\s*safety\b", r"\bplant\s*safety\b",
+            r"\bmachine\s*safety\b", r"\bindustrial\s*safety\b"
+        ]
+        if any(re.search(p, title_lower) for p in process_pats) or sum(1 for p in process_pats if re.search(p, desc_sample)) >= 2:
+            return (
+                OccupationalCategory.PROCESS_INDUSTRIAL_SAFETY,
+                True,
+                "Role focuses on industrial and process safety management (PSM / HAZOP / Machinery)."
+            )
+
+        # 3. Environmental Compliance / Environmental Management
+        env_pats = [
+            r"\benvironment(al)?\s*compliance\b", r"\benvironment(al)?\s*management\b",
+            r"\biso\s*14001\b", r"\bpollution\s*control\b", r"\benvironmental\s*engineer\b",
+            r"\beffluent\b", r"\bair\s*emissions?\b"
+        ]
+        if any(re.search(p, title_lower) for p in env_pats) or sum(1 for p in env_pats if re.search(p, desc_sample)) >= 2:
+            return (
+                OccupationalCategory.ENVIRONMENTAL_COMPLIANCE,
+                True,
+                "Role focuses on statutory environmental compliance, ISO 14001, and environmental engineering."
+            )
+
+        # 4. Sustainability / ESG with HSE Relevance
+        esg_pats = [
+            r"\bsustainability\s*(and|&)\s*(hse|ehs|safety)\b", r"\besg\s*reporting\b",
+            r"\bcarbon\s*neutrality\b", r"\bgreenhouse\s*gas\b"
+        ]
+        has_esg = any(re.search(p, title_lower) for p in esg_pats) or sum(1 for p in esg_pats if re.search(p, desc_sample)) >= 2
+        has_safety = any(re.search(p, full_text) for p in [r"\bsafety\b", r"\bhse\b", r"\behs\b", r"\bhealth\b"])
+        if has_esg and has_safety:
+            return (
+                OccupationalCategory.SUSTAINABILITY_ESG,
+                True,
+                "Role integrates corporate sustainability/ESG with operational safety governance."
+            )
+
+        # 5. Corporate / Workplace Safety
+        workplace_pats = [
+            r"\bworkplace\s*(health|safety)\b", r"\boccupational\s*(health|safety)\b",
+            r"\bbehavior(al)?\s*safety\b", r"\bbbs\b", r"\bergonomics\b", r"\bzero\s*harm\b",
+            r"\bemployee\s*wellbeing\b", r"\bhealth\s*and\s*safety\b", r"\bhsw\b"
+        ]
+        if any(re.search(p, title_lower) for p in workplace_pats) or sum(1 for p in workplace_pats if re.search(p, desc_sample)) >= 2:
+            return (
+                OccupationalCategory.CORPORATE_WORKPLACE_SAFETY,
+                True,
+                "Role focuses on workplace health, behavioral safety culture (BBS), and occupational wellbeing."
+            )
+
+        # 6. Core HSE Leadership
+        if is_core_hse_title or any(re.search(pat, desc_sample) for pat in self.HSE_CORE_TITLE_PATTERNS):
+            return (
+                OccupationalCategory.HSE_LEADERSHIP,
+                True,
+                "Role designates executive Health, Safety & Environment leadership."
+            )
+
+        # 7. Adjacent but potentially relevant
+        adjacent_pats = [
+            r"\bfacilit(y|ies)\s*safety\b", r"\boperations\s*risk\b", r"\bemergency\s*response\b"
+        ]
+        if any(re.search(p, full_text) for p in adjacent_pats):
+            return (
+                OccupationalCategory.ADJACENT,
+                True,
+                "Adjacent operational or risk governance role with potential HSE intersection."
+            )
+
+        # 8. Unrelated
+        return (
+            OccupationalCategory.UNRELATED,
+            False,
+            "Position does not contain Health, Safety or Environmental (HSE) responsibilities."
+        )
 
     def evaluate(
         self,
@@ -153,17 +266,14 @@ class HSEJobMatcher:
         weights: Optional[Dict[str, int]] = None
     ) -> MatchResult:
         """
-        Compute full 100-point match breakdown.
+        Compute full 100-point explainable match breakdown across 6 documented dimensions:
+        - 1. Occupational Relevance: 25 pts (Mandatory gate)
+        - 2. Seniority Alignment: 20 pts (Executive & multi-site leadership)
+        - 3. HSE Technical Competencies: 25 pts (ISO 14001/45001, RCA, PSM, Audits)
+        - 4. Industry Alignment: 10 pts (Manufacturing, chemical, operations)
+        - 5. Educational Qualifications: 10 pts (M.Tech Env, B.Tech Mech, Safety Diploma, Lead Auditor)
+        - 6. Location Preference: 10 pts (India, Singapore, Europe, Australia)
         """
-        weights = weights or {
-            "experience_seniority": 25,
-            "hse_technical_skills": 25,
-            "qualifications": 15,
-            "industry_relevance": 15,
-            "location_international": 15,
-            "employment_preferences": 5
-        }
-
         title_lower = title.lower()
         desc_lower = description.lower()
         full_lower = f"{title_lower}\n{desc_lower}"
@@ -174,71 +284,71 @@ class HSEJobMatcher:
         matching_skills: List[str] = []
         missing_requirements: List[str] = []
 
-        # Check HSE Domain Relevance
-        is_core_hse_title = any(re.search(pat, title_lower) for pat in self.HSE_CORE_TITLE_PATTERNS)
-        is_non_hse_domain = any(re.search(pat, title_lower) for pat in self.NON_HSE_DOMAINS)
-        core_hse_desc_count = sum(1 for pat in self.HSE_CORE_TITLE_PATTERNS if re.search(pat, desc_lower))
+        # Step 1: Occupational Relevance Classification (Gate)
+        category, is_relevant, category_explanation = self.classify_occupational_relevance(title, description)
 
-        # 0. Strict Domain Gate
-        # If title is explicitly non-HSE (Software, Sales, Finance, Devops, etc.) and lacks core HSE title:
-        if is_non_hse_domain and not is_core_hse_title:
+        # Step 2: Strict Exclusion for Unrelated Roles
+        if not is_relevant or category == OccupationalCategory.UNRELATED:
+            capped_score = 12 if "Non-HSE domain" in category_explanation else 15
+            reasons.append(f"Occupational Relevance Gate (0/25 pts): {category_explanation}")
+            reasons.append("Disqualification Policy: Occupationally unrelated vacancies are hard-capped at Low Match (<= 15%).")
             return MatchResult(
-                score=12,
-                level="Low Match",
-                reasons=["Domain Disqualification: Role belongs to non-HSE domain (Software, Sales, Finance, Revenue, or Corporate Operations)."],
+                score=capped_score,
+                level="Low Match (Excluded - Unrelated)",
+                reasons=reasons,
                 matching_qualifications=[],
                 matching_experience=[],
                 matching_skills=[],
-                missing_requirements=["Health, Safety & Environment (HSE/EHS) leadership domain scope is absent."],
-                location_suitability="N/A (Disqualified domain)",
-                sponsorship_status="Not Evaluated"
+                missing_requirements=["Position lacks genuine Health, Safety, Environment (HSE/EHS) scope."],
+                location_suitability="N/A (Disqualified role)",
+                sponsorship_status="Not Evaluated",
+                occupational_category=category,
+                score_breakdown={
+                    "occupational_relevance": 0,
+                    "seniority": 0,
+                    "technical_skills": 0,
+                    "industry": 0,
+                    "qualifications": 0,
+                    "location": 0
+                }
             )
 
-        # If role has zero HSE keywords in both title and description:
-        if not is_core_hse_title and core_hse_desc_count == 0:
-            return MatchResult(
-                score=15,
-                level="Low Match",
-                reasons=["Domain Warning: Position does not contain Health, Safety or Environmental (HSE) responsibilities."],
-                matching_qualifications=[],
-                matching_experience=[],
-                matching_skills=[],
-                missing_requirements=["No explicit Health, Safety & Environment (HSE/EHS) scope identified in title or job description."],
-                location_suitability="N/A (Non-HSE role)",
-                sponsorship_status="Not Evaluated"
-            )
+        # Score Breakdown Storage
+        breakdown: Dict[str, int] = {}
 
-        # 1. Experience & Seniority (Max: 25)
-        w_exp = weights.get("experience_seniority", 25)
-        exp_score = 0
+        # 1. Occupational Relevance (Max: 25)
+        if category in [OccupationalCategory.HSE_LEADERSHIP, OccupationalCategory.PROCESS_INDUSTRIAL_SAFETY,
+                        OccupationalCategory.ENVIRONMENTAL_COMPLIANCE, OccupationalCategory.CORPORATE_WORKPLACE_SAFETY]:
+            occ_score = 25
+        elif category == OccupationalCategory.SUSTAINABILITY_ESG:
+            occ_score = 23
+        else: # Adjacent
+            occ_score = 12
+        breakdown["occupational_relevance"] = occ_score
+        reasons.append(f"Occupational Relevance (+{occ_score}/25 pts): {category} - {category_explanation}")
+
+        # 2. Seniority Alignment (Max: 20)
         is_global_regional = any(k in title_lower for k in self.GLOBAL_REGIONAL_TITLES)
-
-        if is_core_hse_title:
-            if is_global_regional and ("manager" in title_lower or "head" in title_lower or "director" in title_lower or "lead" in title_lower):
-                exp_score = w_exp
-                matching_experience.append("Executive/Global/Regional HSE Leadership role directly matches your 18+ years APAC & Global background")
-                reasons.append(f"Seniority (+{exp_score}): Executive/Global HSE Leadership scope.")
-            elif "senior" in title_lower and ("manager" in title_lower or "lead" in title_lower or "director" in title_lower):
-                exp_score = int(w_exp * 0.92)
-                matching_experience.append("Senior HSE Manager / Lead role matching your extensive management record")
-                reasons.append(f"Seniority (+{exp_score}): Senior HSE Management level.")
-            elif "manager" in title_lower or "lead" in title_lower or "head" in title_lower or "director" in title_lower:
-                exp_score = int(w_exp * 0.84)
-                matching_experience.append("HSE Manager position providing direct operational leadership")
-                reasons.append(f"Seniority (+{exp_score}): HSE Management position.")
-            else:
-                exp_score = int(w_exp * 0.65)
-                matching_experience.append("Core HSE function alignable with leadership scope")
-                reasons.append(f"Seniority (+{exp_score}): HSE functional match.")
+        if is_global_regional and any(t in title_lower for t in ["manager", "head", "director", "lead", "vp"]):
+            sen_score = 20
+            matching_experience.append("Executive/Global/Regional HSE Leadership role directly aligns with your 18+ years APAC leadership record")
+            reasons.append(f"Seniority Alignment (+{sen_score}/20 pts): Global/Regional Executive scope directly matching 18+ years.")
+        elif "senior" in title_lower and any(t in title_lower for t in ["manager", "lead", "director"]):
+            sen_score = 17
+            matching_experience.append("Senior HSE Manager / Lead role matching your extensive multi-site management background")
+            reasons.append(f"Seniority Alignment (+{sen_score}/20 pts): Senior HSE Management level.")
+        elif any(t in title_lower for t in ["manager", "lead", "head", "director"]):
+            sen_score = 14
+            matching_experience.append("HSE Management position providing operational safety leadership")
+            reasons.append(f"Seniority Alignment (+{sen_score}/20 pts): HSE Management tier.")
         else:
-            exp_score = int(w_exp * 0.20)
-            missing_requirements.append("Job title does not clearly designate an HSE leadership tier")
+            sen_score = 10
+            matching_experience.append("HSE technical specialist role alignable with candidate scope")
+            reasons.append(f"Seniority Alignment (+{sen_score}/20 pts): Functional safety position.")
+        breakdown["seniority"] = sen_score
 
-        # 2. HSE Technical Skills (Max: 25)
-        w_skills = weights.get("hse_technical_skills", 25)
+        # 3. Verified HSE Technical Competencies (Max: 25)
         matched_skills_count = 0
-        total_skills_count = len(self.SKILL_MAP)
-
         for skill_name, patterns in self.SKILL_MAP.items():
             matched = False
             for pat in patterns:
@@ -252,14 +362,32 @@ class HSEJobMatcher:
                 if skill_name in ["ISO 14001 / ISO 45001", "Incident Investigation & RCA", "Risk Assessment & Management"]:
                     missing_requirements.append(f"Explicit mention of {skill_name}")
 
-        skills_ratio = min(1.0, (matched_skills_count / 6.0))  # 6 key skills gives full score
-        skills_score = int(w_skills * skills_ratio)
-        reasons.append(f"Technical Skills (+{skills_score}): {matched_skills_count} core competencies identified (ISO standards, incident investigation, audits, governance).")
+        skills_ratio = min(1.0, (matched_skills_count / 6.0))
+        skills_score = int(25 * skills_ratio)
+        breakdown["technical_skills"] = skills_score
+        reasons.append(f"Technical Competencies (+{skills_score}/25 pts): {matched_skills_count} verified competencies identified ({', '.join(matching_skills[:3])}...).")
 
-        # 3. Educational Qualifications (Max: 15)
-        w_qual = weights.get("qualifications", 15)
+        # 4. Industry Alignment (Max: 10)
+        matched_ind_count = 0
+        for ind_name, patterns in self.INDUSTRY_MAP.items():
+            for pat in patterns:
+                if re.search(pat, full_lower):
+                    matched_ind_count += 1
+                    break
+
+        if matched_ind_count >= 2:
+            ind_score = 10
+            reasons.append(f"Industry Alignment (+{ind_score}/10 pts): High match with manufacturing, chemical, and multi-plant environments.")
+        elif matched_ind_count == 1:
+            ind_score = 7
+            reasons.append(f"Industry Alignment (+{ind_score}/10 pts): General multinational matrix corporate environment.")
+        else:
+            ind_score = 3
+            reasons.append(f"Industry Alignment (+{ind_score}/10 pts): Baseline industrial application.")
+        breakdown["industry"] = ind_score
+
+        # 5. Educational Qualifications & Credentials (Max: 10)
         matched_quals_count = 0
-
         for qual_name, patterns in self.QUAL_MAP.items():
             matched = False
             for pat in patterns:
@@ -271,113 +399,80 @@ class HSEJobMatcher:
                 matching_qualifications.append(qual_name)
 
         if matched_quals_count >= 2:
-            qual_score = w_qual
-            reasons.append(f"Qualifications (+{qual_score}): Strong match with your M.Tech, B.Tech Engineering, MBA, and Safety certifications.")
+            qual_score = 10
+            reasons.append(f"Education & Credentials (+{qual_score}/10 pts): Satisfies M.Tech/B.Tech Engineering and certified Lead Auditor requirements.")
         elif matched_quals_count == 1:
-            qual_score = int(w_qual * 0.75)
-            reasons.append(f"Qualifications (+{qual_score}): Key educational requirements satisfied.")
+            qual_score = 7
+            reasons.append(f"Education & Credentials (+{qual_score}/10 pts): Key engineering degree / safety certification required.")
         else:
-            # Baseline qualification points if general degree required
             if "degree" in full_lower or "bachelor" in full_lower or "master" in full_lower:
-                qual_score = int(w_qual * 0.60)
+                qual_score = 5
                 matching_qualifications.append("General Engineering / Technical Degree requirement met")
-                reasons.append(f"Qualifications (+{qual_score}): General higher degree requirement met by your M.Tech/B.Tech.")
+                reasons.append(f"Education & Credentials (+{qual_score}/10 pts): General technical degree requirement met by candidate's M.Tech/B.Tech.")
             else:
-                qual_score = int(w_qual * 0.40)
+                qual_score = 3
+                reasons.append(f"Education & Credentials (+{qual_score}/10 pts): Baseline qualification points.")
+        breakdown["qualifications"] = qual_score
 
-        # 4. Industry Relevance (Max: 15)
-        w_ind = weights.get("industry_relevance", 15)
-        matched_ind_count = 0
-        for ind_name, patterns in self.INDUSTRY_MAP.items():
-            for pat in patterns:
-                if re.search(pat, full_lower):
-                    matched_ind_count += 1
-                    break
-
-        if matched_ind_count >= 2:
-            ind_score = w_ind
-            reasons.append(f"Industry (+{ind_score}): Highly aligned with manufacturing, chemical, multi-plant operations.")
-        elif matched_ind_count == 1:
-            ind_score = int(w_ind * 0.70)
-            reasons.append(f"Industry (+{ind_score}): Aligns with corporate multinational environment.")
-        else:
-            ind_score = int(w_ind * 0.40)
-
-        # 5. Location and International Eligibility (Max: 15)
-        w_loc = weights.get("location_international", 15)
-        loc_score = 0
-        loc_suit = "Unknown"
-
+        # 6. Location Preference (Max: 10)
         target_tier1 = ["India", "Singapore"]
         target_tier2 = ["Germany", "Netherlands", "Ireland", "Australia"]
         target_tier3 = ["United Kingdom", "Switzerland", "France", "Sweden"]
-
         c_norm = (country or "").strip()
 
         if c_norm in target_tier1:
-            loc_score = w_loc
-            loc_suit = f"Optimal Location: {c_norm} (Domestic / APAC Hub)"
-            reasons.append(f"Location (+{loc_score}): Primary target geography ({c_norm}).")
+            loc_score = 10
+            loc_suit = f"Optimal Target Location: {c_norm} (Domestic / APAC Hub)"
+            reasons.append(f"Location Preference (+{loc_score}/10 pts): Primary target geography ({c_norm}).")
         elif c_norm in target_tier2:
-            loc_score = w_loc
-            loc_suit = f"Target International Location: {c_norm} (Europe / Australia priority)"
-            reasons.append(f"Location (+{loc_score}): High-priority international destination ({c_norm}).")
+            loc_score = 10
+            loc_suit = f"Target International Location: {c_norm} (High Priority)"
+            reasons.append(f"Location Preference (+{loc_score}/10 pts): High-priority international destination ({c_norm}).")
         elif c_norm in target_tier3:
-            loc_score = int(w_loc * 0.80)
+            loc_score = 8
             loc_suit = f"Secondary International Location: {c_norm}"
-            reasons.append(f"Location (+{loc_score}): Broader European opportunity ({c_norm}).")
+            reasons.append(f"Location Preference (+{loc_score}/10 pts): Secondary European opportunity ({c_norm}).")
         elif "remote" in location.lower() or "remote" in title_lower:
-            loc_score = int(w_loc * 0.90)
+            loc_score = 8
             loc_suit = "Remote / Flexible Work Arrangement"
-            reasons.append(f"Location (+{loc_score}): Remote flexibility offered.")
+            reasons.append(f"Location Preference (+{loc_score}/10 pts): Remote work option provided.")
         elif c_norm == "Unknown" or not c_norm:
-            loc_score = int(w_loc * 0.40)
+            loc_score = 3
             loc_suit = "Location not confirmed (labeled Unknown)"
-            reasons.append(f"Location (+{loc_score}): Location uncertain, marked Unknown.")
+            reasons.append(f"Location Preference (+{loc_score}/10 pts): Location missing or unverified (Unknown).")
         else:
-            loc_score = int(w_loc * 0.20)
+            loc_score = 2
             loc_suit = f"Non-primary location: {c_norm}"
+            reasons.append(f"Location Preference (+{loc_score}/10 pts): Non-primary country ({c_norm}).")
+        breakdown["location"] = loc_score
 
-        # 6. Employment Preferences (Max: 5)
-        w_emp = weights.get("employment_preferences", 5)
-        emp_score = 0
-        if is_permanent_fulltime:
-            emp_score = w_emp
-            reasons.append(f"Employment Type (+{emp_score}): Confirmed Permanent Full-time.")
-        elif "full-time" in employment_type.lower() or "full time" in employment_type.lower():
-            emp_score = int(w_emp * 0.8)
-            reasons.append(f"Employment Type (+{emp_score}): Full-time vacancy.")
-        elif employment_type == "Unknown":
-            emp_score = int(w_emp * 0.3)
-            reasons.append("Employment Type (+1): Unverified permanence (Unknown).")
-        else:
-            emp_score = 0
-
-        # Sponsorship Detection (check negative first so 'no visa sponsorship' is properly flagged)
+        # Step 3: Sponsorship & Work Authorization Detection (Negative Checked First)
         sponsorship_status = "Unknown"
         for pat in self.SPONSORSHIP_NEGATIVE:
             if re.search(pat, full_lower):
                 sponsorship_status = "Not Supported"
-                reasons.append("Sponsorship: Job posting explicitly notes local work authorization required or no visa sponsorship.")
+                reasons.append("Work Authorization: Job posting explicitly requires local work authorization or specifies no visa sponsorship.")
                 break
         if sponsorship_status == "Unknown":
             for pat in self.SPONSORSHIP_POSITIVE:
                 if re.search(pat, full_lower):
                     sponsorship_status = "Confirmed"
-                    reasons.append("Sponsorship: Job posting explicitly indicates visa/relocation support.")
+                    reasons.append("Work Authorization: Job posting explicitly confirms visa sponsorship or relocation package.")
                     break
+        if sponsorship_status == "Unknown":
+            reasons.append("Work Authorization: Sponsorship status is Unknown (requires employer confirmation; never assumed confirmed).")
 
-        # Calculate Total Score
-        total_score = exp_score + skills_score + qual_score + ind_score + loc_score + emp_score
+        # Step 4: Calculate Total Score
+        total_score = occ_score + sen_score + skills_score + ind_score + qual_score + loc_score
         total_score = max(0, min(100, total_score))
 
-        # Match Level Classification
+        # Step 5: Configurable Match Level Thresholds
         if total_score >= 85:
-            level = "Excellent Match"
-        elif total_score >= 75:
             level = "Strong Match"
-        elif total_score >= 60:
-            level = "Potential Match"
+        elif total_score >= 70:
+            level = "Good Match"
+        elif total_score >= 50:
+            level = "Review Manually"
         else:
             level = "Low Match"
 
@@ -390,5 +485,7 @@ class HSEJobMatcher:
             matching_skills=matching_skills,
             missing_requirements=missing_requirements,
             location_suitability=loc_suit,
-            sponsorship_status=sponsorship_status
+            sponsorship_status=sponsorship_status,
+            occupational_category=category,
+            score_breakdown=breakdown
         )

@@ -90,8 +90,8 @@ def generate_tailored_cv_rules(profile: Dict[str, Any], job_company: str, job_ti
     return TailoredCVContent(
         name=name,
         headline=f"{job_title} | Senior HSE Executive",
-        contact_email="raghunath.hse@gmail.com",
-        contact_phone="+91 98490 00000",
+        contact_email="nraghunr@gmail.com",
+        contact_phone="+91 95507 33654",
         contact_location=profile.get("location", "Hyderabad, India"),
         contact_linkedin="linkedin.com/in/raghunath-reddy-hse",
         summary=summary,
@@ -143,7 +143,7 @@ def generate_tailored_cover_letter_rules(profile: Dict[str, Any], job_company: s
 
     return TailoredCoverLetterContent(
         candidate_name=name,
-        candidate_contact=f"{profile.get('location', 'Hyderabad, India')} | +91 98490 00000 | raghunath.hse@gmail.com",
+        candidate_contact=f"{profile.get('location', 'Hyderabad, India')} | +91 95507 33654 | nraghunr@gmail.com",
         date_str=today_str,
         hiring_manager="Hiring Team",
         company_name=job_company,

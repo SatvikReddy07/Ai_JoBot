@@ -8,10 +8,13 @@ current_dir = os.path.dirname(os.path.abspath(__file__))
 project_root = os.path.dirname(current_dir)
 sys.path.insert(0, project_root)
 
+# Set UTF-8 encoding for standard output
+sys.stdout.reconfigure(encoding='utf-8')
+
 from sqlalchemy import create_engine
 from sqlalchemy.orm import sessionmaker
 from backend.app.models import Job, Base, SearchPreference
-from backend.services.matcher import HSEJobMatcher
+from backend.services.matcher import HSEJobMatcher, OccupationalCategory
 
 db_path = os.path.join(project_root, "data", "hse_career.db")
 engine = create_engine(f"sqlite:///{db_path}")
@@ -21,16 +24,14 @@ def recalculate_and_seed():
     db = SessionLocal()
     matcher = HSEJobMatcher()
 
-    # Load scoring weights
-    pref = db.query(SearchPreference).first()
-    weights = json.loads(pref.scoring_weights) if pref and pref.scoring_weights else None
-
-    # Step 1: Recalculate all existing jobs
+    # Step 1: Recalculate all existing jobs in the database
     existing_jobs = db.query(Job).all()
     print(f"Total existing jobs found in database: {len(existing_jobs)}")
 
-    score_distribution = {"Low Match": 0, "Potential Match": 0, "Strong Match": 0, "Excellent Match": 0}
-    stripe_score_before_after = None
+    score_distribution = {}
+    category_distribution = {}
+    audit_records = []
+    stripe_record = None
 
     for job in existing_jobs:
         old_score = job.match_score
@@ -43,8 +44,7 @@ def recalculate_and_seed():
             city=job.city,
             employment_type=job.employment_type or "Unknown",
             is_permanent_fulltime=bool(job.is_permanent_fulltime),
-            description=job.description or "",
-            weights=weights
+            description=job.description or ""
         )
 
         job.match_score = res.score
@@ -58,201 +58,165 @@ def recalculate_and_seed():
         job.sponsorship_status = res.sponsorship_status
 
         score_distribution[res.level] = score_distribution.get(res.level, 0) + 1
+        category_distribution[res.occupational_category] = category_distribution.get(res.occupational_category, 0) + 1
+
+        audit_entry = {
+            "job_id": job.id,
+            "title": job.title,
+            "company": job.company,
+            "category": res.occupational_category,
+            "old_score": old_score,
+            "new_score": res.score,
+            "old_level": old_level,
+            "new_level": res.level,
+            "breakdown": res.score_breakdown
+        }
+        audit_records.append(audit_entry)
 
         if "Stripe" in (job.company or "") and "Engineering Manager" in (job.title or ""):
-            stripe_score_before_after = (job.id, job.title, old_score, old_level, res.score, res.level, res.reasons)
+            stripe_record = audit_entry
 
     db.commit()
-    print("\nRecalculation complete across all existing jobs!")
-    print("New Score Distribution:")
-    for lvl, cnt in score_distribution.items():
-        print(f"  - {lvl}: {cnt} jobs")
 
-    if stripe_score_before_after:
-        jid, title, os_val, ol_val, ns_val, nl_val, reasons = stripe_score_before_after
-        print(f"\n[VERIFIED FIX] Target Role ID {jid} ({title}):")
-        print(f"  Old Match Score: {os_val}% ({ol_val})")
-        print(f"  New Match Score: {ns_val}% ({nl_val})")
-        print(f"  Disqualification Reason: {reasons[0] if reasons else 'N/A'}")
+    print("\n" + "=" * 80)
+    print("RECALCULATION COMPLETE ACROSS ALL DATABASE VACANCIES")
+    print("=" * 80)
+    print("\nScore Distribution:")
+    for lvl, cnt in sorted(score_distribution.items()):
+        print(f"  - {lvl:<32}: {cnt} jobs")
 
-    # Step 2: Seed 5 authentic high-match HSE leadership roles
-    print("\nSeeding authentic HSE Executive Leadership vacancies matching Raghunath Reddy's profile...")
+    print("\nOccupational Category Classification Distribution:")
+    for cat, cnt in sorted(category_distribution.items()):
+        print(f"  - {cat:<48}: {cnt} jobs")
 
-    authentic_hse_jobs = [
+    if stripe_record:
+        print("\n" + "-" * 80)
+        print("[AUDIT SPOTLIGHT: Stripe False Positive Remediation]")
+        print(f"  Position: {stripe_record['title']} at {stripe_record['company']}")
+        print(f"  Category: {stripe_record['category']}")
+        print(f"  Old Suitability Score: {stripe_record['old_score']}% ({stripe_record['old_level']})")
+        print(f"  New Suitability Score: {stripe_record['new_score']}% ({stripe_record['new_level']})")
+        print(f"  Score Breakdown: {stripe_record['breakdown']}")
+        print("-" * 80)
+
+    # Step 2: Test 10 Required Representative Vacancy Examples
+    print("\n" + "=" * 80)
+    print("TESTING 10 REPRESENTATIVE POSITIONS (PRIORITY 1.F TEST MATRIX)")
+    print("=" * 80)
+
+    test_matrix = [
         {
-            "source_job_id": "seed-hse-001",
-            "title": "Global Head of SHE (Safety, Health & Environment)",
-            "company": "dsm-firmenich Global Operations",
-            "source": "greenhouse",
-            "url": "https://careers.dsm-firmenich.com/global-she-head-2026",
-            "location": "Singapore / Hyderabad, India",
-            "country": "Singapore",
-            "city": "Singapore",
-            "employment_type": "Full-time",
-            "is_permanent_fulltime": True,
-            "description": """As Global Head of SHE, you will direct global safety, health, and environmental strategy across 19+ manufacturing plants in APAC and globally.
-Key Responsibilities:
-- Lead corporate HSE governance and establish safety management frameworks across multinational matrix operations.
-- Ensure strict compliance with ISO 14001 (Environmental Management) and ISO 45001 (Occupational Health & Safety) standards as Lead Auditor.
-- Champion behavior-based safety culture (BBS) to drive zero harm and reduce LTIF and TRIR metrics.
-- Oversee comprehensive incident investigation, root cause analysis (RCA), CAPA implementation, and contractor safety management (PTW).
-- Drive sustainability, carbon neutrality, and ESG reporting across industrial operations.
-- Report directly to the Executive Committee on statutory safety compliance, HAZOP, and enterprise risk management.
-Qualifications:
-- Bachelor's or Master's degree in Engineering (Mechanical / Environmental Engineering preferred).
-- Diploma in Industrial Safety or recognized international safety qualification (NEBOSH / CSP).
-- 15+ years of progressive HSE leadership experience in manufacturing, chemical, or nutrition sectors.
-- Proven multi-site and APAC regional leadership background managing plant safety teams."""
+            "title": "Regional HSE Manager",
+            "company": "Shell Global Operations",
+            "desc": "Lead regional health, safety and environmental assurance across manufacturing and terminal operations. Oversee ISO 14001 and ISO 45001 compliance, incident investigation, RCA, and regulatory safety registers.",
+            "loc": "Singapore",
+            "country": "Singapore"
         },
         {
-            "source_job_id": "seed-hse-002",
-            "title": "Regional EHS Director - Asia Pacific (APAC)",
-            "company": "Micron Technology",
-            "source": "greenhouse",
-            "url": "https://careers.micron.com/jobs/apac-ehs-director",
-            "location": "Singapore",
-            "country": "Singapore",
-            "city": "Singapore",
-            "employment_type": "Full-time",
-            "is_permanent_fulltime": True,
-            "description": """We are seeking an executive Regional EHS Director to lead Environmental, Health & Safety operations across our Asia Pacific manufacturing footprint.
-Role Overview:
-- Set strategic vision for EHS governance across multi-site manufacturing fabrication facilities in APAC.
-- Oversee ISO 14001 and ISO 45001 management systems, audits, and statutory environmental compliance.
-- Lead process safety management, HAZOP reviews, industrial hygiene, and contractor EHS programs.
-- Analyze EHS KPIs (LTIFR, TRIR) to track incident trends and execute root cause analysis (RCA).
-- Collaborate with plant directors and regional executives to embed proactive safety culture.
-Requirements:
-- Engineering Degree (B.Tech Mechanical or Environmental Engineering).
-- 15-20 years of EHS leadership experience with significant multi-plant APAC regional oversight.
-- Certified ISO 14001 / 45001 Lead Auditor, Diploma in Industrial Safety.
-- Proven experience in multinational matrix corporate environments."""
-        },
-        {
-            "source_job_id": "seed-hse-003",
-            "title": "Corporate HSE Governance & Assurance Manager",
-            "company": "Unilever Global",
-            "source": "lever",
-            "url": "https://jobs.lever.co/unilever/corporate-hse-governance",
-            "location": "Mumbai / Bengaluru, India",
-            "country": "India",
-            "city": "Mumbai",
-            "employment_type": "Full-time",
-            "is_permanent_fulltime": True,
-            "description": """Join Unilever's Global Safety & Environment team as Corporate HSE Governance & Assurance Manager.
-Responsibilities:
-- Architect and govern global HSE policy standards, audit protocols, and statutory compliance frameworks.
-- Direct ISO 14001 and ISO 45001 integrated management system audits across manufacturing sites.
-- Lead high-severity incident investigations, RCA, and corrective action prevention systems.
-- Supervise contractor safety management, permit to work (PTW) protocols, and emergency response readiness.
-- Drive sustainability initiatives including greenhouse gas reduction, energy efficiency, and ESG alignment.
-Candidate Profile:
-- Degree in Engineering (Mechanical/Chemical/Environmental) with post-graduate qualifications (M.Tech or MBA preferred).
-- Diploma in Industrial Safety and certified Lead Auditor credentials.
-- 12+ years of industrial HSE experience with proven corporate assurance and audit track record."""
-        },
-        {
-            "source_job_id": "seed-hse-004",
-            "title": "Senior Industrial EHS Manager",
-            "company": "BASF",
-            "source": "greenhouse",
-            "url": "https://basf.jobs/germany/senior-ehs-manager",
-            "location": "Ludwigshafen, Germany",
-            "country": "Germany",
-            "city": "Ludwigshafen",
-            "employment_type": "Full-time",
-            "is_permanent_fulltime": True,
-            "description": """BASF is hiring a Senior Industrial EHS Manager for chemical and performance materials operations.
-Key Focus:
-- Direct site EHS operations, statutory safety assurance, and environmental emissions compliance.
-- Oversee process safety, HAZOP studies, HIRA, fire protection, and risk assessment methodologies.
-- Implement ISO 14001 environmental management and ISO 45001 occupational safety systems.
-- Manage contractor safety, workplace safety inspections, and behavior-based safety programs.
-- Relocation package and visa sponsorship available for qualified international candidates.
-Candidate Profile:
-- Master's or Bachelor's in Environmental Engineering, Mechanical Engineering, or related technical field.
-- 12+ years of industrial plant EHS leadership experience in manufacturing or chemical processing.
-- Proven expertise in safety audits, incident analysis, and statutory authorities liaison."""
-        },
-        {
-            "source_job_id": "seed-hse-005",
-            "title": "Workplace Health, Safety & Wellbeing (HSW) Lead",
+            "title": "Global EHS Director",
             "company": "GlaxoSmithKline (GSK)",
-            "source": "lever",
-            "url": "https://jobs.lever.co/gsk/workplace-hsw-lead",
-            "location": "Dublin, Ireland",
-            "country": "Ireland",
-            "city": "Dublin",
-            "employment_type": "Full-time",
-            "is_permanent_fulltime": True,
-            "description": """GSK is looking for an experienced Workplace Health, Safety & Wellbeing (HSW) Lead to oversee our Ireland and European operations.
-Key Responsibilities:
-- Lead the regional Workplace HSW framework, ensuring compliance with European and statutory health and safety regulations.
-- Champion workplace wellbeing, mental wellness, ergonomics, and behavioral safety programs.
-- Oversee ISO 45001 safety certification audits, contractor management, and incident investigation.
-- Monitor safety metrics (LTIF, near-miss reporting) and conduct detailed root cause analysis.
-- International candidates welcome; relocation assistance provided.
-Candidate Profile:
-- Degree in Engineering, Occupational Health, or Environmental Science; Safety Diploma / NEBOSH.
-- 10+ years of safety leadership experience across manufacturing or life sciences operations.
-- Demonstrated ability to influence leadership and foster a culture of care."""
+            "desc": "Direct global EHS strategic roadmap across 20+ multinational plants. Oversee safety culture transformation, zero-harm initiatives, process safety management (PSM), HAZOP reviews, and statutory compliance.",
+            "loc": "Singapore / Hyderabad",
+            "country": "Singapore"
+        },
+        {
+            "title": "Manufacturing EHS Manager",
+            "company": "BASF Chemical",
+            "desc": "Lead plant EHS operations, contractor safety management, permit to work (PTW), machine safety, chemical exposure monitoring, and ISO 45001 internal safety audits.",
+            "loc": "Ludwigshafen, Germany",
+            "country": "Germany"
+        },
+        {
+            "title": "Process Safety Manager",
+            "company": "ExxonMobil",
+            "desc": "Direct process safety management (PSM), quantitative risk assessment, HAZOP, HIRA, fire protection systems, and chemical process hazards analysis for heavy industrial manufacturing.",
+            "loc": "Rotterdam, Netherlands",
+            "country": "Netherlands"
+        },
+        {
+            "title": "Environmental Compliance Manager",
+            "company": "Unilever Operations",
+            "desc": "Manage statutory environmental compliance, ISO 14001 audit protocols, air emissions, wastewater treatment, hazardous waste disposal, and pollution control registers.",
+            "loc": "Mumbai, India",
+            "country": "India"
+        },
+        {
+            "title": "Corporate HSW Manager",
+            "company": "AstraZeneca",
+            "desc": "Direct corporate health, safety and wellbeing (HSW) frameworks, occupational ergonomics, employee mental health, and behavior-based safety (BBS) programs across global offices and laboratories.",
+            "loc": "Dublin, Ireland",
+            "country": "Ireland"
+        },
+        {
+            "title": "Global Sustainability & HSE Manager",
+            "company": "Danone",
+            "desc": "Lead combined sustainability and HSE reporting. Drive carbon footprint reduction, ESG compliance, Enablon reporting, and ISO 14001 environmental safety frameworks.",
+            "loc": "Paris / Amsterdam",
+            "country": "Netherlands"
+        },
+        {
+            "title": "Software Engineering Manager",
+            "company": "Google",
+            "desc": "Lead a team of full-stack software engineers building distributed cloud microservices in Go, Python, and TypeScript. Manage sprints and architecture.",
+            "loc": "Bangalore, India",
+            "country": "India"
+        },
+        {
+            "title": "IT Project Manager",
+            "company": "Salesforce",
+            "desc": "Manage enterprise cloud CRM implementation projects, budget allocation, agile scrum ceremonies, and IT vendor deliverables.",
+            "loc": "Sydney, Australia",
+            "country": "Australia"
+        },
+        {
+            "title": "Sales Director - Enterprise Tech",
+            "company": "Snowflake",
+            "desc": "Lead enterprise cloud data warehouse sales team, quota attainment, customer contracts, ARR growth, and strategic deal desk negotiations.",
+            "loc": "Singapore",
+            "country": "Singapore"
         }
     ]
 
-    seeded_count = 0
-    for j_data in authentic_hse_jobs:
-        # Check if already seeded
-        existing = db.query(Job).filter(
-            Job.source == j_data["source"],
-            Job.source_job_id == j_data["source_job_id"]
-        ).first()
-        if existing:
-            job = existing
-        else:
-            job = Job(
-                source_job_id=j_data["source_job_id"],
-                title=j_data["title"],
-                company=j_data["company"],
-                source=j_data["source"],
-                url=j_data["url"],
-                location=j_data["location"],
-                country=j_data["country"],
-                city=j_data["city"],
-                employment_type=j_data["employment_type"],
-                is_permanent_fulltime=j_data["is_permanent_fulltime"],
-                description=j_data["description"],
-                discovered_at=datetime.utcnow() if hasattr(datetime, "utcnow") else datetime.now()
-            )
-            db.add(job)
+    print(f"{'Position Title':<38} | {'Category':<32} | {'Score':<6} | {'Level':<24} | {'Relevance'}")
+    print("-" * 115)
 
-        # Evaluate score
+    test_results = []
+    for item in test_matrix:
         res = matcher.evaluate(
-            title=j_data["title"],
-            location=j_data["location"],
-            country=j_data["country"],
-            city=j_data["city"],
-            employment_type=j_data["employment_type"],
-            is_permanent_fulltime=j_data["is_permanent_fulltime"],
-            description=j_data["description"],
-            weights=weights
+            title=item["title"],
+            location=item["loc"],
+            country=item["country"],
+            city="",
+            employment_type="Full-time",
+            is_permanent_fulltime=True,
+            description=item["desc"]
         )
+        is_rel = "Relevant (HSE)" if res.occupational_category != OccupationalCategory.UNRELATED else "EXCLUDED (Non-HSE)"
+        print(f"{item['title'][:37]:<38} | {res.occupational_category[:31]:<32} | {res.score:<6} | {res.level[:23]:<24} | {is_rel}")
+        test_results.append({
+            "title": item["title"],
+            "company": item["company"],
+            "category": res.occupational_category,
+            "score": res.score,
+            "level": res.level,
+            "relevance": is_rel,
+            "breakdown": res.score_breakdown
+        })
 
-        job.match_score = res.score
-        job.match_level = res.level
-        job.match_reasons = json.dumps(res.reasons)
-        job.matching_qualifications = json.dumps(res.matching_qualifications)
-        job.matching_experience = json.dumps(res.matching_experience)
-        job.matching_skills = json.dumps(res.matching_skills)
-        job.missing_requirements = json.dumps(res.missing_requirements)
-        job.location_suitability = res.location_suitability
-        job.sponsorship_status = res.sponsorship_status
+    # Save comprehensive report to JSON for audit trail
+    report_data = {
+        "audit_timestamp": datetime.utcnow().isoformat(),
+        "total_jobs_evaluated": len(existing_jobs),
+        "score_distribution": score_distribution,
+        "category_distribution": category_distribution,
+        "stripe_remediation": stripe_record,
+        "test_matrix_results": test_results
+    }
+    with open("data/recalculation_audit_report.json", "w", encoding="utf-8") as f:
+        json.dump(report_data, f, indent=2)
 
-        seeded_count += 1
-        print(f"Seeded/Updated: '{job.title}' at {job.company} -> Score: {job.match_score}% ({job.match_level})")
-
-    db.commit()
+    print("\nAudit report saved to: data/recalculation_audit_report.json")
     db.close()
-    print(f"\nSuccessfully seeded and evaluated {seeded_count} authentic HSE leadership jobs!")
 
 if __name__ == "__main__":
     recalculate_and_seed()

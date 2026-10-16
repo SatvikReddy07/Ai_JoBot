@@ -952,14 +952,19 @@ def generate_package_for_job(
     profile = get_or_create_user_profile(db)
     profile_dict = format_user_profile_response(profile)
 
-    pkg = create_application_package(
-        db=db,
-        job=job,
-        profile_dict=profile_dict,
-        template_name=payload.template_name or "global_regional_hse",
-        custom_notes=payload.custom_notes,
-        consent_given=profile.consent_given_for_ai
-    )
+    try:
+        pkg = create_application_package(
+            db=db,
+            job=job,
+            profile_dict=profile_dict,
+            template_name=payload.template_name or "global_regional_hse",
+            custom_notes=payload.custom_notes,
+            consent_given=profile.consent_given_for_ai,
+            force_override=bool(payload.force_override)
+        )
+    except ValueError as ve:
+        raise HTTPException(status_code=400, detail=str(ve))
+
     return format_package_response(pkg)
 
 # 25. List All Packages (Studio Overview)

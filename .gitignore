@@ -23,6 +23,7 @@ data/qa_scratch/
 data/*.lock
 data/*.pid
 data/logs/
+data/*.json
 *.log
 
 

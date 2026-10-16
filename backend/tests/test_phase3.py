@@ -285,3 +285,79 @@ def test_high_match_notification(db_session, sample_job):
     # Second call should be suppressed as duplicate
     duplicate_log = check_and_notify_high_match_job(db_session, sample_job, min_score=85, respect_quiet=False)
     assert duplicate_log is None
+
+# 10. Stripe Engineering Manager Gate & Package Warning Test
+def test_stripe_engineering_manager_relevance_gate(db_session, candidate_profile):
+    stripe_job = Job(
+        source="greenhouse",
+        source_job_id="stripe_eng_mgr_test",
+        company="Stripe",
+        title="Engineering Manager, Forward Deployed (Privy)",
+        location="NYC-Privy",
+        country="United States",
+        employment_type="Full-time",
+        is_permanent_fulltime=True,
+        description="Lead a software engineering team building developer tools and APIs.",
+        url="https://stripe.com/jobs/stripe_eng_mgr_test",
+        match_score=12,
+        match_level="Low Match (Excluded - Unrelated)"
+    )
+    db_session.add(stripe_job)
+    db_session.commit()
+    db_session.refresh(stripe_job)
+
+    # Attempting to generate package without force_override must raise ValueError
+    with pytest.raises(ValueError) as exc_info:
+        create_application_package(
+            db=db_session,
+            job=stripe_job,
+            profile_dict=candidate_profile,
+            template_name="global_regional_hse",
+            force_override=False
+        )
+    assert "Occupational Relevance Warning" in str(exc_info.value)
+
+    # With force_override=True, generation is permitted with explicit audit flag
+    pkg = create_application_package(
+        db=db_session,
+        job=stripe_job,
+        profile_dict=candidate_profile,
+        template_name="global_regional_hse",
+        force_override=True
+    )
+    assert pkg is not None
+    assert pkg.status == "draft"
+
+# 11. Approval Invalidation After Document Editing
+def test_approval_invalidation_after_editing(db_session, sample_job, candidate_profile):
+    pkg = create_application_package(
+        db=db_session,
+        job=sample_job,
+        profile_dict=candidate_profile,
+        template_name="global_regional_hse"
+    )
+    # First formal approval
+    approved = approve_package(db=db_session, package=pkg, approved_by="Raghunath Reddy")
+    assert approved.status == "approved"
+
+    # Edit document
+    cv_doc = next(d for d in pkg.documents if d.doc_type == "cv_docx")
+    updated_doc = update_document_content(
+        db=db_session,
+        package=approved,
+        document=cv_doc,
+        new_content_text=cv_doc.content_text,
+        change_summary="Revision test"
+    )
+    # Package status must revert from approved to in_review
+    assert updated_doc.is_approved is False
+    assert approved.status == "in_review"
+
+# 12. Score Distinction: Suitability vs ATS Keyword Coverage
+def test_suitability_score_vs_ats_coverage_distinction(sample_job, candidate_profile):
+    ats = analyze_ats_keywords(sample_job.title, sample_job.description, candidate_profile)
+    # Career suitability score is from matcher (90)
+    # ATS coverage is from keyword extraction (e.g. 75.0%)
+    assert "overall_coverage_pct" in ats
+    assert "disclaimer" in ats
+    assert "probability" not in ats["disclaimer"].lower() or "not represent" in ats["disclaimer"].lower()

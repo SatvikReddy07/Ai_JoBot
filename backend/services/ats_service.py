@@ -100,10 +100,9 @@ def analyze_ats_keywords(job_title: str, job_description: str, profile_dict: Dic
     if total_found_in_jd > 0:
         coverage_pct = round((len(matched) / total_found_in_jd) * 100, 1)
     else:
-        coverage_pct = 85.0  # Baseline when JD is short
+        coverage_pct = 0.0  # Zero coverage when posting lacks HSE taxonomy terms
 
-    # Cap coverage appropriately
-    coverage_pct = min(100.0, max(15.0, coverage_pct))
+    coverage_pct = min(100.0, max(0.0, coverage_pct))
 
     # 4. Generate legitimate ethical suggestions
     suggestions: List[str] = [
@@ -113,6 +112,8 @@ def analyze_ats_keywords(job_title: str, job_description: str, profile_dict: Dic
     if missing:
         top_missing = [m["keyword"] for m in missing[:3]]
         suggestions.append(f"Consider clarifying any verified experience related to: {', '.join(top_missing)} if applicable to your project history.")
+    elif total_found_in_jd == 0:
+        suggestions.append("No standard Health, Safety, Environment (HSE/EHS) keywords detected in the advertised job description.")
 
     return {
         "job_id": 0,
@@ -122,5 +123,5 @@ def analyze_ats_keywords(job_title: str, job_description: str, profile_dict: Dic
         "matched_keywords": matched,
         "missing_keywords": missing,
         "legitimate_suggestions": suggestions,
-        "disclaimer": "Internal coverage indicator based on candidate profile evidence, not a guarantee of employer ATS scoring."
+        "disclaimer": "ATS keyword coverage measures the percentage of employer keywords substantiated by verified candidate facts. It is completely independent of overall job suitability and does NOT represent an interview probability or hiring guarantee."
     }

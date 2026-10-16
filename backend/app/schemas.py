@@ -383,6 +383,7 @@ class ApplicationPackageResponse(BaseModel):
 class PackageGenerateRequest(BaseModel):
     template_name: Optional[str] = "global_regional_hse"
     custom_notes: Optional[str] = None
+    force_override: Optional[bool] = False
 
 
 class DocumentUpdateRequest(BaseModel):

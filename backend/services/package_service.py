@@ -39,7 +39,8 @@ def create_application_package(
     profile_dict: Dict[str, Any],
     template_name: str = "global_regional_hse",
     custom_notes: Optional[str] = None,
-    consent_given: bool = False
+    consent_given: bool = False,
+    force_override: bool = False
 ) -> ApplicationPackage:
     """
     Assembles a complete, job-specific tailored application package:
@@ -50,9 +51,17 @@ def create_application_package(
     - Package Metadata (.json)
     - Downloadable ZIP archive
     """
+    # 0. Occupational Relevance & Low Match Warning Gate
+    if (job.match_score < 50 or "Excluded - Unrelated" in (job.match_level or "")) and not force_override:
+        raise ValueError(
+            f"Occupational Relevance Warning: Position '{job.title}' at {job.company} is classified as {job.match_level} "
+            f"({job.match_score}/100) and appears unrelated to HSE executive leadership. "
+            f"Generating an HSE application package for an unrelated role requires explicit confirmation (force_override=True)."
+        )
+
     # 1. Run ATS Keyword Analysis
     ats_data = analyze_ats_keywords(job.title, job.description, profile_dict)
-    ats_score = ats_data.get("overall_coverage_pct", 75.0)
+    ats_score = ats_data.get("overall_coverage_pct", 0.0)
 
     # 2. Create ApplicationPackage DB record
     timestamp_str = datetime.utcnow().strftime("%Y%m%d_%H%M%S")
@@ -238,8 +247,11 @@ def create_application_package(
         "generation_date": datetime.utcnow().isoformat(),
         "template_used": template_name,
         "generation_method": package.generation_method,
+        "career_suitability_score": job.match_score,
+        "ats_keyword_coverage_pct": ats_score,
         "ats_match_score": ats_score,
         "status": "draft",
+        "disclaimer": "Career suitability score (career alignment) and ATS keyword coverage (evidence alignment) are independent metrics. Neither represents an interview probability or hiring guarantee.",
         "documents": [
             cv_docx_name, cv_pdf_name, cl_docx_name, cl_pdf_name, jd_txt_name, chk_name
         ]
