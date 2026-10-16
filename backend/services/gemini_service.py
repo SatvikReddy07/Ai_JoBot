@@ -379,3 +379,31 @@ def _upsert_assessment(db: Session, job_id: int, job_hash: str, data: Dict[str, 
     db.commit()
     db.refresh(assessment)
     return assessment
+
+
+async def call_gemini_api_safe(prompt: str, model_name: Optional[str] = None) -> Optional[Dict[str, Any]]:
+    """Safe helper to call Gemini API and return parsed JSON dict, or None on failure."""
+    api_key = os.getenv("GEMINI_API_KEY", "").strip()
+    if not api_key:
+        return None
+
+    try:
+        from google import genai
+        client = genai.Client(api_key=api_key)
+        selected_model = model_name or os.getenv("GEMINI_MODEL", DEFAULT_GEMINI_MODEL)
+        response = client.models.generate_content(
+            model=selected_model,
+            contents=prompt,
+        )
+        text = response.text.strip()
+        if text.startswith("```json"):
+            text = text[7:]
+        if text.startswith("```"):
+            text = text[3:]
+        if text.endswith("```"):
+            text = text[:-3]
+        return json.loads(text.strip())
+    except Exception as exc:
+        logger.warning(f"call_gemini_api_safe error: {exc}")
+        return None
+

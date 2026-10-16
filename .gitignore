@@ -15,6 +15,10 @@ frontend/out/
 data/hse_career.db*
 data/*_backup.db*
 data/cv/
+data/packages/
+data/generated/
+data/*.zip
+data/exports/
 data/*.lock
 data/*.pid
 data/logs/

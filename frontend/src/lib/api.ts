@@ -1,6 +1,7 @@
 import {
   Job, JobListResponse, DashboardStats, EmployerBoard,
-  SearchHistoryItem, Settings, UserProfile, AIJobAssessment, AIUsageStats, CVUploadResponse
+  SearchHistoryItem, Settings, UserProfile, AIJobAssessment, AIUsageStats, CVUploadResponse,
+  TailoredCVContent, TailoredCoverLetterContent, ATSKeywordAnalysis, ApplicationPackage, GeneratedDocument
 } from "../types";
 
 
@@ -202,4 +203,96 @@ export async function getAiUsageStats(): Promise<AIUsageStats> {
   const res = await fetch(`${API_BASE_URL}/api/ai/usage`, { cache: "no-store" });
   return handleResponse<AIUsageStats>(res);
 }
+
+// -------------------------------------------------------------
+// Phase 3: Application Packages & Studio API
+// -------------------------------------------------------------
+
+export async function getAtsAnalysis(jobId: number): Promise<ATSKeywordAnalysis> {
+  const res = await fetch(`${API_BASE_URL}/api/jobs/${jobId}/ats-analysis`, { cache: "no-store" });
+  return handleResponse<ATSKeywordAnalysis>(res);
+}
+
+export async function generateCvPreview(jobId: number, templateName: string = "global_regional_hse"): Promise<TailoredCVContent> {
+  const res = await fetch(`${API_BASE_URL}/api/jobs/${jobId}/generate-cv?template_name=${templateName}`, {
+    method: "POST"
+  });
+  return handleResponse<TailoredCVContent>(res);
+}
+
+export async function generateCoverLetterPreview(jobId: number, templateName: string = "global_regional_hse"): Promise<TailoredCoverLetterContent> {
+  const res = await fetch(`${API_BASE_URL}/api/jobs/${jobId}/generate-cover-letter?template_name=${templateName}`, {
+    method: "POST"
+  });
+  return handleResponse<TailoredCoverLetterContent>(res);
+}
+
+export async function generatePackage(jobId: number, templateName: string = "global_regional_hse", customNotes?: string): Promise<ApplicationPackage> {
+  const res = await fetch(`${API_BASE_URL}/api/jobs/${jobId}/generate-package`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ template_name: templateName, custom_notes: customNotes })
+  });
+  return handleResponse<ApplicationPackage>(res);
+}
+
+export async function getAllPackages(): Promise<ApplicationPackage[]> {
+  const res = await fetch(`${API_BASE_URL}/api/packages`, { cache: "no-store" });
+  return handleResponse<ApplicationPackage[]>(res);
+}
+
+export async function getJobPackages(jobId: number): Promise<ApplicationPackage[]> {
+  const res = await fetch(`${API_BASE_URL}/api/jobs/${jobId}/packages`, { cache: "no-store" });
+  return handleResponse<ApplicationPackage[]>(res);
+}
+
+export async function getPackageById(packageId: number): Promise<ApplicationPackage> {
+  const res = await fetch(`${API_BASE_URL}/api/packages/${packageId}`, { cache: "no-store" });
+  return handleResponse<ApplicationPackage>(res);
+}
+
+export async function updatePackageDocument(
+  packageId: number,
+  documentId: number,
+  contentText: string,
+  changeSummary: string = "Manual candidate revision"
+): Promise<GeneratedDocument> {
+  const res = await fetch(`${API_BASE_URL}/api/packages/${packageId}/documents/${documentId}`, {
+    method: "PUT",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ content_text: contentText, change_summary: changeSummary })
+  });
+  return handleResponse<GeneratedDocument>(res);
+}
+
+export async function approvePackage(
+  packageId: number,
+  approvedBy: string = "Raghunath Reddy",
+  notes?: string
+): Promise<ApplicationPackage> {
+  const res = await fetch(`${API_BASE_URL}/api/packages/${packageId}/approve`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ approved_by: approvedBy, approval_notes: notes })
+  });
+  return handleResponse<ApplicationPackage>(res);
+}
+
+export function getPackageDownloadUrl(packageId: number, docType?: string): string {
+  if (docType) {
+    return `${API_BASE_URL}/api/packages/${packageId}/download?doc_type=${docType}`;
+  }
+  return `${API_BASE_URL}/api/packages/${packageId}/download`;
+}
+
+export async function getPdfConverterStatus(): Promise<{ available: boolean; primary_engine: string; description: string }> {
+  const res = await fetch(`${API_BASE_URL}/api/pdf-converter/status`, { cache: "no-store" });
+  return handleResponse<{ available: boolean; primary_engine: string; description: string }>(res);
+}
+
+export async function triggerTestNotification(): Promise<{ success: boolean; message: string }> {
+  const res = await fetch(`${API_BASE_URL}/api/notifications/test`, { method: "POST" });
+  return handleResponse<{ success: boolean; message: string }>(res);
+}
+
 

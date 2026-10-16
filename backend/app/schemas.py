@@ -262,3 +262,143 @@ class DashboardStatsResponse(BaseModel):
     active_applications: int
     last_successful_search: Optional[datetime] = None
     ai_analyzed_count: int = 0
+
+
+# ==================== PHASE 3 SCHEMAS ====================
+
+class TailoredCVContent(BaseModel):
+    name: str = "Raghunath Reddy"
+    headline: str = "Global SHE & Security Manager"
+    contact_email: str = "raghunath.hse@gmail.com"
+    contact_phone: str = "+91 98490 00000"
+    contact_location: str = "Hyderabad, India"
+    contact_linkedin: str = "linkedin.com/in/raghunath-reddy-hse"
+    summary: str
+    core_competencies: List[str] = []
+    employment_history: List[EmploymentHistoryItem] = []
+    education: List[str] = []
+    certifications: List[str] = []
+    key_achievements: List[str] = []
+    template_name: str = "global_regional_hse"
+    target_job_title: str
+    target_company: str
+    generation_method: str = "rules_fallback"  # 'ai' or 'rules_fallback'
+    evidence_notes: Dict[str, Any] = {}
+
+
+class TailoredCoverLetterContent(BaseModel):
+    candidate_name: str = "Raghunath Reddy"
+    candidate_contact: str = "Hyderabad, India | +91 98490 00000 | raghunath.hse@gmail.com"
+    date_str: str
+    hiring_manager: str = "Hiring Team"
+    company_name: str
+    job_title: str
+    salutation: str = "Dear Hiring Team,"
+    body_paragraphs: List[str] = []
+    sign_off: str = "Sincerely,\nRaghunath Reddy"
+    generation_method: str = "rules_fallback"
+
+
+class ATSMatchedKeyword(BaseModel):
+    keyword: str
+    category: str
+    evidence: str
+
+
+class ATSMissingKeyword(BaseModel):
+    keyword: str
+    category: str
+    impact: str
+
+
+class ATSKeywordAnalysisResponse(BaseModel):
+    job_id: int
+    company: str
+    title: str
+    overall_coverage_pct: float
+    matched_keywords: List[ATSMatchedKeyword] = []
+    missing_keywords: List[ATSMissingKeyword] = []
+    legitimate_suggestions: List[str] = []
+    disclaimer: str = "Internal coverage indicator based on candidate profile evidence, not a guarantee of employer ATS scoring."
+
+
+class DocumentVersionResponse(BaseModel):
+    id: int
+    document_id: int
+    version_number: int
+    change_summary: Optional[str] = None
+    created_at: datetime
+
+    model_config = ConfigDict(from_attributes=True)
+
+
+class GeneratedDocumentResponse(BaseModel):
+    id: int
+    package_id: int
+    doc_type: str
+    filename: str
+    file_path: str
+    content_text: Optional[str] = None
+    version_number: int
+    is_approved: bool
+    created_at: datetime
+    updated_at: datetime
+    versions: List[DocumentVersionResponse] = []
+
+    model_config = ConfigDict(from_attributes=True)
+
+
+class DocumentApprovalResponse(BaseModel):
+    id: int
+    package_id: int
+    approved_by: str
+    version_approved: int
+    approval_notes: Optional[str] = None
+    approved_at: datetime
+
+    model_config = ConfigDict(from_attributes=True)
+
+
+class ApplicationPackageResponse(BaseModel):
+    id: int
+    job_id: int
+    job_title: str
+    company: str
+    job_location: str
+    template_name: str
+    status: str
+    generation_method: str
+    ats_match_score: float
+    ats_analysis: Dict[str, Any] = {}
+    notes: Optional[str] = None
+    has_zip: bool
+    created_at: datetime
+    updated_at: datetime
+    documents: List[GeneratedDocumentResponse] = []
+    approvals: List[DocumentApprovalResponse] = []
+
+    model_config = ConfigDict(from_attributes=True)
+
+
+class PackageGenerateRequest(BaseModel):
+    template_name: Optional[str] = "global_regional_hse"
+    custom_notes: Optional[str] = None
+
+
+class DocumentUpdateRequest(BaseModel):
+    content_text: str
+    change_summary: Optional[str] = "Manual candidate revision"
+
+
+class PackageApproveRequest(BaseModel):
+    approved_by: Optional[str] = "Raghunath Reddy"
+    approval_notes: Optional[str] = "Approved tailored application package"
+
+
+class NotificationConfig(BaseModel):
+    enabled: bool = True
+    min_score: int = 85
+    quiet_hours_enabled: bool = True
+    quiet_hours_start: int = 22
+    quiet_hours_end: int = 7
+

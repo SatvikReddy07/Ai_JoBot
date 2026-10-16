@@ -9,6 +9,7 @@ from ..connectors.greenhouse import GreenhouseConnector
 from ..connectors.lever import LeverConnector
 from ..connectors.base import RawJob
 from .matcher import HSEJobMatcher
+from .notification_service import check_and_notify_high_match_job
 
 logger = logging.getLogger(__name__)
 
@@ -226,6 +227,11 @@ async def run_discovery_service(db: Session, board_id: Optional[int] = None) -> 
                     )
                     db.add(new_job)
                     total_new += 1
+                    if match_result.score >= 85:
+                        try:
+                            check_and_notify_high_match_job(db, new_job)
+                        except Exception as n_err:
+                            logger.warning(f"Notification error: {n_err}")
 
             db.commit()
 

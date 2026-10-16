@@ -1,6 +1,6 @@
 import datetime
 from sqlalchemy import (
-    Column, Integer, String, Boolean, DateTime, Text, ForeignKey, UniqueConstraint
+    Column, Integer, Float, String, Boolean, DateTime, Text, ForeignKey, UniqueConstraint
 )
 from sqlalchemy.orm import relationship
 from .database import Base
@@ -46,6 +46,7 @@ class Job(Base):
     # Relationships
     history = relationship("ApplicationHistory", back_populates="job", cascade="all, delete-orphan")
     ai_assessment = relationship("AIJobAssessment", back_populates="job", uselist=False, cascade="all, delete-orphan")
+    packages = relationship("ApplicationPackage", back_populates="job", cascade="all, delete-orphan")
 
     __table_args__ = (
         UniqueConstraint("source", "source_job_id", name="uq_source_source_job_id"),
@@ -176,3 +177,99 @@ class AIUsageLog(Base):
     model = Column(String(50), nullable=False)
     status = Column(String(50), nullable=False)  # 'success', 'rate_limited', 'failed', 'cached'
     daily_date = Column(String(20), nullable=False, index=True)  # YYYY-MM-DD
+
+
+# ==================== PHASE 3 MODELS ====================
+
+class ApplicationPackage(Base):
+    __tablename__ = "application_packages"
+
+    id = Column(Integer, primary_key=True, index=True)
+    job_id = Column(Integer, ForeignKey("jobs.id"), nullable=False, index=True)
+    template_name = Column(String(100), default="global_regional_hse")
+    status = Column(String(50), default="draft", index=True)  # 'draft', 'in_review', 'approved'
+    package_dir = Column(String(500), nullable=False)
+    zip_path = Column(String(500), nullable=True)
+    generation_method = Column(String(50), default="rules_fallback")  # 'ai' or 'rules_fallback'
+    ats_match_score = Column(Float, default=0.0)
+    ats_analysis_json = Column(Text, default="{}")  # JSON with matched/missing keywords, suggestions
+    notes = Column(Text, nullable=True)
+    created_at = Column(DateTime, default=datetime.datetime.utcnow)
+    updated_at = Column(DateTime, default=datetime.datetime.utcnow)
+
+    # Relationships
+    job = relationship("Job", back_populates="packages")
+    documents = relationship("GeneratedDocument", back_populates="package", cascade="all, delete-orphan")
+    approvals = relationship("DocumentApproval", back_populates="package", cascade="all, delete-orphan")
+    audit_logs = relationship("GenerationAuditLog", back_populates="package", cascade="all, delete-orphan")
+
+
+class GeneratedDocument(Base):
+    __tablename__ = "generated_documents"
+
+    id = Column(Integer, primary_key=True, index=True)
+    package_id = Column(Integer, ForeignKey("application_packages.id"), nullable=False, index=True)
+    doc_type = Column(String(50), nullable=False, index=True)  # 'cv_docx', 'cv_pdf', 'cover_letter_docx', 'cover_letter_pdf', 'job_description', 'checklist', 'metadata'
+    filename = Column(String(255), nullable=False)
+    file_path = Column(String(500), nullable=False)
+    content_text = Column(Text, nullable=True)  # JSON or plain text body
+    version_number = Column(Integer, default=1)
+    is_approved = Column(Boolean, default=False)
+    created_at = Column(DateTime, default=datetime.datetime.utcnow)
+    updated_at = Column(DateTime, default=datetime.datetime.utcnow)
+
+    # Relationships
+    package = relationship("ApplicationPackage", back_populates="documents")
+    versions = relationship("DocumentVersion", back_populates="document", cascade="all, delete-orphan")
+
+
+class DocumentVersion(Base):
+    __tablename__ = "document_versions"
+
+    id = Column(Integer, primary_key=True, index=True)
+    document_id = Column(Integer, ForeignKey("generated_documents.id"), nullable=False, index=True)
+    version_number = Column(Integer, nullable=False)
+    content_text = Column(Text, nullable=False)
+    file_path = Column(String(500), nullable=True)
+    change_summary = Column(String(255), nullable=True)
+    created_at = Column(DateTime, default=datetime.datetime.utcnow)
+
+    document = relationship("GeneratedDocument", back_populates="versions")
+
+
+class DocumentApproval(Base):
+    __tablename__ = "document_approvals"
+
+    id = Column(Integer, primary_key=True, index=True)
+    package_id = Column(Integer, ForeignKey("application_packages.id"), nullable=False, index=True)
+    approved_by = Column(String(100), default="Raghunath Reddy")
+    version_approved = Column(Integer, default=1)
+    approval_notes = Column(Text, nullable=True)
+    approved_at = Column(DateTime, default=datetime.datetime.utcnow)
+
+    package = relationship("ApplicationPackage", back_populates="approvals")
+
+
+class GenerationAuditLog(Base):
+    __tablename__ = "generation_audit_logs"
+
+    id = Column(Integer, primary_key=True, index=True)
+    package_id = Column(Integer, ForeignKey("application_packages.id"), nullable=False, index=True)
+    action = Column(String(100), nullable=False)
+    details = Column(Text, nullable=True)
+    engine_used = Column(String(50), default="rules_fallback")
+    timestamp = Column(DateTime, default=datetime.datetime.utcnow)
+
+    package = relationship("ApplicationPackage", back_populates="audit_logs")
+
+
+class DesktopNotificationLog(Base):
+    __tablename__ = "desktop_notification_logs"
+
+    id = Column(Integer, primary_key=True, index=True)
+    job_id = Column(Integer, ForeignKey("jobs.id"), nullable=False, index=True)
+    match_score = Column(Integer, nullable=False)
+    notification_type = Column(String(50), default="high_match")
+    status = Column(String(50), default="sent")
+    notified_at = Column(DateTime, default=datetime.datetime.utcnow)
+

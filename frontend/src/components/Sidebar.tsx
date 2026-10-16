@@ -11,7 +11,8 @@ import {
   ShieldCheck,
   Building2,
   ExternalLink,
-  UserCheck
+  UserCheck,
+  FileCheck
 } from "lucide-react";
 
 export type NavTab =
@@ -19,6 +20,7 @@ export type NavTab =
   | "discover"
   | "high_matches"
   | "profile"
+  | "studio"
   | "saved"
   | "tracker"
   | "history"
@@ -65,8 +67,14 @@ export const Sidebar: React.FC<SidebarProps> = ({
       badgeColor: "bg-indigo-500/20 text-indigo-300 border-indigo-500/30"
     },
     {
+      id: "studio" as NavTab,
+      label: "Application Studio",
+      icon: FileCheck,
+      badge: "Phase 3",
+      badgeColor: "bg-purple-500/20 text-purple-300 border-purple-500/30"
+    },
+    {
       id: "saved" as NavTab,
-
       label: "Saved Jobs",
       icon: Bookmark,
       badge: savedCount > 0 ? savedCount : null,

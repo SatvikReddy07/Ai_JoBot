@@ -172,3 +172,112 @@ export interface Settings {
   updated_at: string;
 }
 
+// ==================== PHASE 3 TYPES ====================
+
+export interface TailoredCVContent {
+  name: string;
+  headline: string;
+  contact_email: string;
+  contact_phone: string;
+  contact_location: string;
+  contact_linkedin: string;
+  summary: string;
+  core_competencies: string[];
+  employment_history: EmploymentRecord[];
+  education: string[];
+  certifications: string[];
+  key_achievements: string[];
+  template_name: string;
+  target_job_title: string;
+  target_company: string;
+  generation_method: "ai" | "rules_fallback";
+  evidence_notes?: Record<string, any>;
+}
+
+export interface TailoredCoverLetterContent {
+  candidate_name: string;
+  candidate_contact: string;
+  date_str: string;
+  hiring_manager: string;
+  company_name: string;
+  job_title: string;
+  salutation: string;
+  body_paragraphs: string[];
+  sign_off: string;
+  generation_method: "ai" | "rules_fallback";
+}
+
+export interface ATSMatchedKeyword {
+  keyword: string;
+  category: string;
+  evidence: string;
+}
+
+export interface ATSMissingKeyword {
+  keyword: string;
+  category: string;
+  impact: string;
+}
+
+export interface ATSKeywordAnalysis {
+  job_id: number;
+  company: string;
+  title: string;
+  overall_coverage_pct: number;
+  matched_keywords: ATSMatchedKeyword[];
+  missing_keywords: ATSMissingKeyword[];
+  legitimate_suggestions: string[];
+  disclaimer: string;
+}
+
+export interface DocumentVersion {
+  id: number;
+  document_id: number;
+  version_number: number;
+  change_summary?: string;
+  created_at: string;
+}
+
+export interface GeneratedDocument {
+  id: number;
+  package_id: number;
+  doc_type: "cv_docx" | "cv_pdf" | "cover_letter_docx" | "cover_letter_pdf" | "job_description" | "checklist" | "metadata";
+  filename: string;
+  file_path: string;
+  content_text?: string;
+  version_number: number;
+  is_approved: boolean;
+  created_at: string;
+  updated_at: string;
+  versions?: DocumentVersion[];
+}
+
+export interface DocumentApproval {
+  id: number;
+  package_id: number;
+  approved_by: string;
+  version_approved: number;
+  approval_notes?: string;
+  approved_at: string;
+}
+
+export interface ApplicationPackage {
+  id: number;
+  job_id: number;
+  job_title: string;
+  company: string;
+  job_location: string;
+  template_name: string;
+  status: "draft" | "in_review" | "approved";
+  generation_method: "ai" | "rules_fallback";
+  ats_match_score: number;
+  ats_analysis?: ATSKeywordAnalysis;
+  notes?: string;
+  has_zip: boolean;
+  created_at: string;
+  updated_at: string;
+  documents: GeneratedDocument[];
+  approvals: DocumentApproval[];
+}
+
+

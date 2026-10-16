@@ -23,7 +23,8 @@ import {
   AlertTriangle,
   Quote,
   Zap,
-  Info
+  Info,
+  FileCheck
 } from "lucide-react";
 import { Job, AIJobAssessment } from "../types";
 import { analyzeJobWithAi, getJobAiAssessment } from "../lib/api";
@@ -33,13 +34,15 @@ interface JobModalProps {
   onClose: () => void;
   onToggleSave: (jobId: number, currentSaved: boolean) => void;
   onStatusChange: (jobId: number, status: string, notes?: string) => void;
+  onOpenStudio?: (jobId: number) => void;
 }
 
 export const JobModal: React.FC<JobModalProps> = ({
   job,
   onClose,
   onToggleSave,
-  onStatusChange
+  onStatusChange,
+  onOpenStudio
 }) => {
   if (!job) return null;
 
@@ -432,6 +435,19 @@ export const JobModal: React.FC<JobModalProps> = ({
           </button>
 
           <div className="flex items-center space-x-2">
+            {onOpenStudio && (
+              <button
+                onClick={() => {
+                  onClose();
+                  onOpenStudio(job.id);
+                }}
+                className="inline-flex items-center space-x-1.5 px-4 py-2 rounded-lg text-xs font-semibold bg-purple-600/20 hover:bg-purple-600/30 text-purple-300 border border-purple-500/30 transition-all"
+              >
+                <FileCheck className="w-3.5 h-3.5 text-purple-400" />
+                <span>Open in Studio</span>
+              </button>
+            )}
+
             <a
               href={job.url}
               target="_blank"

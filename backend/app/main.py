@@ -14,7 +14,9 @@ from sqlalchemy import func, desc, asc
 from .database import engine, get_db, Base
 from .models import (
     Job, EmployerBoard, SearchPreference, SearchHistory, ApplicationHistory,
-    MasterCV, UserProfile, AIJobAssessment, AIUsageLog
+    MasterCV, UserProfile, AIJobAssessment, AIUsageLog,
+    ApplicationPackage, GeneratedDocument, DocumentVersion, DocumentApproval,
+    GenerationAuditLog, DesktopNotificationLog
 )
 from .schemas import (
     JobResponse, JobListResponse, JobStatusUpdate, JobSaveToggle,
@@ -22,7 +24,10 @@ from .schemas import (
     SettingsResponse, SettingsUpdate, ScoringWeights,
     SearchRunResponse, SearchHistoryResponse, DashboardStatsResponse,
     MasterCVResponse, UserProfileResponse, UserProfileUpdate, UserConsentToggle,
-    AIJobAssessmentResponse, AIUsageStatsResponse, CVUploadResponse
+    AIJobAssessmentResponse, AIUsageStatsResponse, CVUploadResponse,
+    TailoredCVContent, TailoredCoverLetterContent, ATSKeywordAnalysisResponse,
+    GeneratedDocumentResponse, DocumentApprovalResponse, ApplicationPackageResponse,
+    PackageGenerateRequest, DocumentUpdateRequest, PackageApproveRequest, NotificationConfig
 )
 
 from ..services.discovery import run_discovery_service, init_default_boards, init_search_preferences
@@ -31,6 +36,14 @@ from ..services.cv_parser import extract_text_from_file, parse_cv_content
 from ..services.gemini_service import (
     analyze_job_with_ai, get_daily_ai_usage, DEFAULT_GEMINI_MODEL, DEFAULT_DAILY_LIMIT
 )
+from ..services.ats_service import analyze_ats_keywords
+from ..services.tailoring_service import generate_tailored_cv, generate_tailored_cover_letter
+from ..services.package_service import (
+    create_application_package, update_document_content, approve_package,
+    format_package_response, PACKAGES_DIR
+)
+from ..services.notification_service import check_and_notify_high_match_job, send_windows_notification
+from ..services.cv_generator import check_pdf_converter_availability
 
 # Setup logger
 logging.basicConfig(level=logging.INFO)
@@ -851,3 +864,252 @@ def get_job_ai_assessment(job_id: int, db: Session = Depends(get_db)):
 @app.get("/api/ai/usage", response_model=AIUsageStatsResponse)
 def get_ai_usage_stats(db: Session = Depends(get_db)):
     return get_daily_ai_usage(db)
+
+
+# ==================== PHASE 3 ENDPOINTS ====================
+
+# 20. ATS Keyword Analysis
+@app.get("/api/jobs/{job_id}/ats-analysis", response_model=ATSKeywordAnalysisResponse)
+def get_job_ats_analysis(job_id: int, db: Session = Depends(get_db)):
+    job = db.query(Job).filter(Job.id == job_id).first()
+    if not job:
+        raise HTTPException(status_code=404, detail="Job vacancy not found.")
+
+    profile = get_or_create_user_profile(db)
+    profile_dict = format_user_profile_response(profile)
+
+    res = analyze_ats_keywords(job.title, job.description, profile_dict)
+    res["job_id"] = job.id
+    res["company"] = job.company
+    res["title"] = job.title
+    return res
+
+# 21. PDF Converter Diagnostics
+@app.get("/api/pdf-converter/status")
+def get_pdf_converter_status():
+    return check_pdf_converter_availability()
+
+# 22. Generate Tailored CV Preview
+@app.post("/api/jobs/{job_id}/generate-cv", response_model=TailoredCVContent)
+async def generate_cv_for_job(
+    job_id: int,
+    template_name: str = Query("global_regional_hse"),
+    db: Session = Depends(get_db)
+):
+    job = db.query(Job).filter(Job.id == job_id).first()
+    if not job:
+        raise HTTPException(status_code=404, detail="Job vacancy not found.")
+
+    profile = get_or_create_user_profile(db)
+    profile_dict = format_user_profile_response(profile)
+
+    cv_content = await generate_tailored_cv(
+        profile=profile_dict,
+        job_company=job.company,
+        job_title=job.title,
+        job_desc=job.description,
+        template_name=template_name,
+        consent_given=profile.consent_given_for_ai
+    )
+    return cv_content
+
+# 23. Generate Tailored Cover Letter Preview
+@app.post("/api/jobs/{job_id}/generate-cover-letter", response_model=TailoredCoverLetterContent)
+async def generate_cover_letter_for_job(
+    job_id: int,
+    template_name: str = Query("global_regional_hse"),
+    db: Session = Depends(get_db)
+):
+    job = db.query(Job).filter(Job.id == job_id).first()
+    if not job:
+        raise HTTPException(status_code=404, detail="Job vacancy not found.")
+
+    profile = get_or_create_user_profile(db)
+    profile_dict = format_user_profile_response(profile)
+
+    cl_content = await generate_tailored_cover_letter(
+        profile=profile_dict,
+        job_company=job.company,
+        job_title=job.title,
+        job_location=job.location,
+        job_desc=job.description,
+        template_name=template_name,
+        consent_given=profile.consent_given_for_ai
+    )
+    return cl_content
+
+# 24. Generate Full Application Package
+@app.post("/api/jobs/{job_id}/generate-package", response_model=ApplicationPackageResponse)
+def generate_package_for_job(
+    job_id: int,
+    payload: PackageGenerateRequest,
+    db: Session = Depends(get_db)
+):
+    job = db.query(Job).filter(Job.id == job_id).first()
+    if not job:
+        raise HTTPException(status_code=404, detail="Job vacancy not found.")
+
+    profile = get_or_create_user_profile(db)
+    profile_dict = format_user_profile_response(profile)
+
+    pkg = create_application_package(
+        db=db,
+        job=job,
+        profile_dict=profile_dict,
+        template_name=payload.template_name or "global_regional_hse",
+        custom_notes=payload.custom_notes,
+        consent_given=profile.consent_given_for_ai
+    )
+    return format_package_response(pkg)
+
+# 25. List All Packages (Studio Overview)
+@app.get("/api/packages", response_model=List[ApplicationPackageResponse])
+def list_all_packages(db: Session = Depends(get_db)):
+    packages = db.query(ApplicationPackage).order_by(desc(ApplicationPackage.created_at)).all()
+    return [format_package_response(p) for p in packages]
+
+# 26. List Packages for specific Job
+@app.get("/api/jobs/{job_id}/packages", response_model=List[ApplicationPackageResponse])
+def get_packages_for_job(job_id: int, db: Session = Depends(get_db)):
+    packages = db.query(ApplicationPackage).filter(
+        ApplicationPackage.job_id == job_id
+    ).order_by(desc(ApplicationPackage.created_at)).all()
+    return [format_package_response(p) for p in packages]
+
+# 27. Get Package Details
+@app.get("/api/packages/{package_id}", response_model=ApplicationPackageResponse)
+def get_package_by_id(package_id: int, db: Session = Depends(get_db)):
+    package = db.query(ApplicationPackage).filter(ApplicationPackage.id == package_id).first()
+    if not package:
+        raise HTTPException(status_code=404, detail="Application package not found.")
+    return format_package_response(package)
+
+# 28. Edit/Update Document Content Draft
+@app.put("/api/packages/{package_id}/documents/{document_id}", response_model=GeneratedDocumentResponse)
+def update_document(
+    package_id: int,
+    document_id: int,
+    payload: DocumentUpdateRequest,
+    db: Session = Depends(get_db)
+):
+    package = db.query(ApplicationPackage).filter(ApplicationPackage.id == package_id).first()
+    if not package:
+        raise HTTPException(status_code=404, detail="Application package not found.")
+
+    doc = db.query(GeneratedDocument).filter(
+        GeneratedDocument.id == document_id,
+        GeneratedDocument.package_id == package_id
+    ).first()
+    if not doc:
+        raise HTTPException(status_code=404, detail="Document not found in this package.")
+
+    updated_doc = update_document_content(
+        db=db,
+        package=package,
+        document=doc,
+        new_content_text=payload.content_text,
+        change_summary=payload.change_summary or "Manual user revision"
+    )
+
+    versions = [
+        {
+            "id": v.id,
+            "document_id": v.document_id,
+            "version_number": v.version_number,
+            "change_summary": v.change_summary,
+            "created_at": v.created_at
+        }
+        for v in updated_doc.versions
+    ]
+
+    return {
+        "id": updated_doc.id,
+        "package_id": updated_doc.package_id,
+        "doc_type": updated_doc.doc_type,
+        "filename": updated_doc.filename,
+        "file_path": updated_doc.file_path,
+        "content_text": updated_doc.content_text,
+        "version_number": updated_doc.version_number,
+        "is_approved": updated_doc.is_approved,
+        "created_at": updated_doc.created_at,
+        "updated_at": updated_doc.updated_at,
+        "versions": versions
+    }
+
+# 29. Approve Package
+@app.post("/api/packages/{package_id}/approve", response_model=ApplicationPackageResponse)
+def approve_package_endpoint(
+    package_id: int,
+    payload: PackageApproveRequest,
+    db: Session = Depends(get_db)
+):
+    package = db.query(ApplicationPackage).filter(ApplicationPackage.id == package_id).first()
+    if not package:
+        raise HTTPException(status_code=404, detail="Application package not found.")
+
+    approved = approve_package(
+        db=db,
+        package=package,
+        approved_by=payload.approved_by or "Raghunath Reddy",
+        notes=payload.approval_notes
+    )
+    return format_package_response(approved)
+
+# 30. Secure Download for Package ZIP or Documents
+@app.get("/api/packages/{package_id}/download")
+def download_package_file(
+    package_id: int,
+    doc_type: Optional[str] = Query(None), # None for full ZIP, or 'cv_docx', 'cv_pdf', 'cover_letter_docx', 'cover_letter_pdf'
+    db: Session = Depends(get_db)
+):
+    package = db.query(ApplicationPackage).filter(ApplicationPackage.id == package_id).first()
+    if not package:
+        raise HTTPException(status_code=404, detail="Application package not found.")
+
+    if not doc_type or doc_type == "zip":
+        if not package.zip_path or not Path(package.zip_path).exists():
+            raise HTTPException(status_code=404, detail="ZIP package file not found on disk.")
+        target_path = Path(package.zip_path).resolve()
+        filename = target_path.name
+        media_type = "application/zip"
+    else:
+        doc = db.query(GeneratedDocument).filter(
+            GeneratedDocument.package_id == package_id,
+            GeneratedDocument.doc_type == doc_type
+        ).first()
+        if not doc or not Path(doc.file_path).exists():
+            raise HTTPException(status_code=404, detail=f"Document '{doc_type}' not found.")
+        target_path = Path(doc.file_path).resolve()
+        filename = doc.filename
+        if filename.endswith(".docx"):
+            media_type = "application/vnd.openxmlformats-officedocument.wordprocessingml.document"
+        elif filename.endswith(".pdf"):
+            media_type = "application/pdf"
+        else:
+            media_type = "text/plain"
+
+    # Directory Traversal Protection: verify file resides within PACKAGES_DIR
+    resolved_packages_dir = PACKAGES_DIR.resolve()
+    try:
+        target_path.relative_to(resolved_packages_dir)
+    except ValueError:
+        raise HTTPException(status_code=403, detail="Access denied: invalid file path.")
+
+    return FileResponse(
+        path=str(target_path),
+        filename=filename,
+        media_type=media_type
+    )
+
+# 31. Test Windows Notification
+@app.post("/api/notifications/test")
+def test_notification():
+    success = send_windows_notification(
+        title="🎯 HSE Career Agent - High Match Alert",
+        message="Test alert: Global HSE Manager vacancy identified (Score: 92/100). Ready in Application Studio."
+    )
+    return {
+        "success": success,
+        "message": "Desktop toast notification dispatched successfully" if success else "Notification attempted via Windows PowerShell."
+    }
+

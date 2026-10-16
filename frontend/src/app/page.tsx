@@ -14,6 +14,7 @@ import { EmployerManager } from "../components/EmployerManager";
 import { SearchHistoryView } from "../components/SearchHistoryView";
 import { SettingsView } from "../components/SettingsView";
 import { CareerProfileView } from "../components/CareerProfileView";
+import { ApplicationStudioView } from "../components/ApplicationStudioView";
 
 import {
   Job,
@@ -55,9 +56,15 @@ export default function Home() {
   const [settings, setSettings] = useState<Settings | null>(null);
 
   const [selectedJob, setSelectedJob] = useState<Job | null>(null);
+  const [studioTargetJobId, setStudioTargetJobId] = useState<number | null>(null);
   const [isSearching, setIsSearching] = useState(false);
   const [isLoadingJobs, setIsLoadingJobs] = useState(false);
   const [notification, setNotification] = useState<{ type: "success" | "error"; text: string } | null>(null);
+
+  const handleOpenStudio = (jobId: number) => {
+    setStudioTargetJobId(jobId);
+    setCurrentTab("studio");
+  };
 
   // Filter state for Discover tab
   const [filters, setFilters] = useState<JobFilterParams>({
@@ -231,6 +238,10 @@ export default function Home() {
     profile: {
       title: "My Career Profile",
       subtitle: "Master CV, verified professional background, and AI career matching configuration"
+    },
+    studio: {
+      title: "AI Application Studio",
+      subtitle: "Tailor executive CVs, generate cover letters, review ATS alignment & export packages"
     },
     saved: {
 
@@ -410,6 +421,11 @@ export default function Home() {
             <CareerProfileView />
           )}
 
+          {/* TAB: APPLICATION STUDIO (PHASE 3) */}
+          {currentTab === "studio" && (
+            <ApplicationStudioView initialJobId={studioTargetJobId} />
+          )}
+
           {/* TAB 4: SAVED JOBS */}
           {currentTab === "saved" && (
 
@@ -472,6 +488,7 @@ export default function Home() {
           onClose={() => setSelectedJob(null)}
           onToggleSave={handleToggleSave}
           onStatusChange={handleStatusChange}
+          onOpenStudio={handleOpenStudio}
         />
       )}
     </div>
