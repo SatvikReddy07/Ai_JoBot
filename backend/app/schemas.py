@@ -403,3 +403,173 @@ class NotificationConfig(BaseModel):
     quiet_hours_start: int = 22
     quiet_hours_end: int = 7
 
+
+# ==================== PHASE 4 SCHEMAS ====================
+
+# -- Eligibility Engine --
+class EligibilityCheck(BaseModel):
+    category: str  # occupational_relevance, seniority, technical_qualifications, education, certifications, location, work_authorization, visa_sponsorship, language, licenses, employment_type, closing_date
+    status: str  # met, not_met, unknown, requires_review
+    detail: str
+    is_mandatory: bool = False
+
+class EligibilityAssessmentResponse(BaseModel):
+    job_id: int
+    company: str
+    title: str
+    overall_status: str  # ready, requires_review, missing_info, not_suitable
+    checks: List[EligibilityCheck] = []
+    met_count: int = 0
+    not_met_count: int = 0
+    unknown_count: int = 0
+    recommendation: str = ""
+
+# -- Job Application --
+class JobApplicationCreate(BaseModel):
+    job_id: int
+    notes: Optional[str] = None
+
+class JobApplicationStatusUpdate(BaseModel):
+    status: str
+    notes: Optional[str] = None
+    confirmation_reference: Optional[str] = None
+    date_submitted: Optional[datetime] = None
+    follow_up_date: Optional[datetime] = None
+
+class JobApplicationResponse(BaseModel):
+    id: int
+    job_id: int
+    package_id: Optional[int] = None
+    status: str
+    eligibility_status: str
+    eligibility_details: Optional[Dict[str, Any]] = None
+    application_url: Optional[str] = None
+    application_portal: Optional[str] = None
+    submission_method: Optional[str] = None
+    cv_version: Optional[str] = None
+    cover_letter_version: Optional[str] = None
+    date_prepared: Optional[datetime] = None
+    date_submitted: Optional[datetime] = None
+    confirmation_reference: Optional[str] = None
+    user_approved: bool = False
+    user_approved_at: Optional[datetime] = None
+    approval_notes: Optional[str] = None
+    application_questions: Optional[Dict[str, Any]] = None
+    follow_up_date: Optional[datetime] = None
+    follow_up_notes: Optional[str] = None
+    notes: Optional[str] = None
+    created_at: datetime
+    updated_at: datetime
+    # Denormalized job info for display
+    job_title: Optional[str] = None
+    job_company: Optional[str] = None
+    job_location: Optional[str] = None
+    job_match_score: Optional[int] = None
+    job_sponsorship: Optional[str] = None
+
+    model_config = ConfigDict(from_attributes=True)
+
+class ApplicationApprovalRequest(BaseModel):
+    approval_notes: Optional[str] = "User approved for application preparation"
+
+class SubmissionRecordRequest(BaseModel):
+    confirmation_reference: Optional[str] = None
+    submission_method: Optional[str] = "manual_upload"
+    notes: Optional[str] = None
+
+# -- Recruiter Contacts --
+class RecruiterContactCreate(BaseModel):
+    name: str
+    title: Optional[str] = None
+    company: Optional[str] = None
+    email: Optional[str] = None
+    linkedin_url: Optional[str] = None
+    contact_type: str = "recruiter"
+    notes: Optional[str] = None
+
+class RecruiterContactResponse(BaseModel):
+    id: int
+    name: str
+    title: Optional[str] = None
+    company: Optional[str] = None
+    email: Optional[str] = None
+    linkedin_url: Optional[str] = None
+    contact_type: str
+    notes: Optional[str] = None
+    created_at: datetime
+    updated_at: datetime
+
+    model_config = ConfigDict(from_attributes=True)
+
+# -- Recruiter Outreach --
+class OutreachGenerateRequest(BaseModel):
+    application_id: Optional[int] = None
+    contact_id: Optional[int] = None
+    message_type: str = "initial_outreach"  # initial_outreach, follow_up, referral_request, thank_you
+    channel: str = "linkedin"  # linkedin, email
+    custom_notes: Optional[str] = None
+
+class RecruiterOutreachResponse(BaseModel):
+    id: int
+    application_id: Optional[int] = None
+    contact_id: Optional[int] = None
+    message_type: str
+    channel: str
+    subject: Optional[str] = None
+    message_body: str
+    is_approved: bool
+    is_sent: bool
+    sent_at: Optional[datetime] = None
+    response_received: bool
+    response_notes: Optional[str] = None
+    created_at: datetime
+    updated_at: datetime
+
+    model_config = ConfigDict(from_attributes=True)
+
+# -- Follow-up Reminders --
+class ReminderCreate(BaseModel):
+    application_id: Optional[int] = None
+    reminder_type: str = "follow_up"
+    title: str
+    description: Optional[str] = None
+    due_date: datetime
+
+class ReminderResponse(BaseModel):
+    id: int
+    application_id: Optional[int] = None
+    reminder_type: str
+    title: str
+    description: Optional[str] = None
+    due_date: datetime
+    is_completed: bool
+    completed_at: Optional[datetime] = None
+    is_dismissed: bool
+    snooze_until: Optional[datetime] = None
+    created_at: datetime
+    # Denormalized for display
+    job_title: Optional[str] = None
+    company: Optional[str] = None
+
+    model_config = ConfigDict(from_attributes=True)
+
+# -- Application Control Center Dashboard --
+class ApplicationControlCenterStats(BaseModel):
+    total_applications: int = 0
+    shortlisted: int = 0
+    ready_for_application: int = 0
+    in_progress: int = 0
+    submitted: int = 0
+    follow_up_due: int = 0
+    interviews_scheduled: int = 0
+    offers_received: int = 0
+    rejected: int = 0
+    withdrawn: int = 0
+    pending_reminders: int = 0
+    overdue_reminders: int = 0
+
+class PortalInfo(BaseModel):
+    name: str
+    supported: bool
+    features: List[str] = []
+    limitations: List[str] = []

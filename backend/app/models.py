@@ -273,3 +273,130 @@ class DesktopNotificationLog(Base):
     status = Column(String(50), default="sent")
     notified_at = Column(DateTime, default=datetime.datetime.utcnow)
 
+
+# ==================== PHASE 4 MODELS ====================
+
+class JobApplication(Base):
+    """Full application lifecycle tracking with duplicate prevention."""
+    __tablename__ = "job_applications"
+
+    id = Column(Integer, primary_key=True, index=True)
+    job_id = Column(Integer, ForeignKey("jobs.id"), nullable=False, index=True)
+    package_id = Column(Integer, ForeignKey("application_packages.id"), nullable=True, index=True)
+
+    # Application state machine
+    status = Column(String(50), default="shortlisted", index=True)
+    # States: shortlisted, package_generated, ready_for_review, approved_for_preparation,
+    #         application_in_progress, submitted, follow_up_due, interview_scheduled,
+    #         rejected, offer_received, withdrawn
+
+    # Eligibility assessment
+    eligibility_status = Column(String(50), default="pending")  # ready, requires_review, missing_info, not_suitable, pending
+    eligibility_details = Column(Text, nullable=True)  # JSON: detailed eligibility breakdown
+
+    # Application details
+    application_url = Column(String(500), nullable=True)
+    application_portal = Column(String(100), nullable=True)  # greenhouse, lever, workday, linkedin, naukri, direct, manual
+    submission_method = Column(String(100), nullable=True)  # browser_assisted, manual_upload, portal_direct, email
+
+    # CV and cover letter versions used
+    cv_version = Column(String(100), nullable=True)
+    cover_letter_version = Column(String(100), nullable=True)
+
+    # Submission tracking
+    date_prepared = Column(DateTime, nullable=True)
+    date_submitted = Column(DateTime, nullable=True)
+    confirmation_reference = Column(String(255), nullable=True)
+    confirmation_screenshot_path = Column(String(500), nullable=True)
+
+    # User approval
+    user_approved = Column(Boolean, default=False)
+    user_approved_at = Column(DateTime, nullable=True)
+    approval_notes = Column(Text, nullable=True)
+
+    # Application questions and answers
+    application_questions_json = Column(Text, default="{}")  # JSON: questions and prepared answers
+
+    # Follow-up
+    follow_up_date = Column(DateTime, nullable=True)
+    follow_up_notes = Column(Text, nullable=True)
+
+    # Notes
+    notes = Column(Text, nullable=True)
+
+    created_at = Column(DateTime, default=datetime.datetime.utcnow)
+    updated_at = Column(DateTime, default=datetime.datetime.utcnow)
+
+    # Relationships
+    job = relationship("Job", backref="applications")
+    package = relationship("ApplicationPackage")
+    recruiter_outreaches = relationship("RecruiterOutreach", back_populates="application", cascade="all, delete-orphan")
+    reminders = relationship("FollowUpReminder", back_populates="application", cascade="all, delete-orphan")
+
+    __table_args__ = (
+        UniqueConstraint("job_id", name="uq_job_application_job_id"),
+    )
+
+
+class RecruiterContact(Base):
+    """Recruiter and hiring manager contact registry."""
+    __tablename__ = "recruiter_contacts"
+
+    id = Column(Integer, primary_key=True, index=True)
+    name = Column(String(200), nullable=False)
+    title = Column(String(200), nullable=True)
+    company = Column(String(200), nullable=True)
+    email = Column(String(255), nullable=True)
+    linkedin_url = Column(String(500), nullable=True)
+    contact_type = Column(String(50), default="recruiter")  # recruiter, hiring_manager, referral, talent_acquisition
+    notes = Column(Text, nullable=True)
+    created_at = Column(DateTime, default=datetime.datetime.utcnow)
+    updated_at = Column(DateTime, default=datetime.datetime.utcnow)
+
+    outreaches = relationship("RecruiterOutreach", back_populates="contact", cascade="all, delete-orphan")
+
+
+class RecruiterOutreach(Base):
+    """Track recruiter message drafts and outreach history."""
+    __tablename__ = "recruiter_outreaches"
+
+    id = Column(Integer, primary_key=True, index=True)
+    application_id = Column(Integer, ForeignKey("job_applications.id"), nullable=True, index=True)
+    contact_id = Column(Integer, ForeignKey("recruiter_contacts.id"), nullable=True, index=True)
+
+    message_type = Column(String(50), nullable=False)  # initial_outreach, follow_up, referral_request, thank_you
+    channel = Column(String(50), default="linkedin")  # linkedin, email
+    subject = Column(String(255), nullable=True)
+    message_body = Column(Text, nullable=False)
+    is_approved = Column(Boolean, default=False)
+    is_sent = Column(Boolean, default=False)  # User marks as sent after manual sending
+    sent_at = Column(DateTime, nullable=True)
+    response_received = Column(Boolean, default=False)
+    response_notes = Column(Text, nullable=True)
+
+    created_at = Column(DateTime, default=datetime.datetime.utcnow)
+    updated_at = Column(DateTime, default=datetime.datetime.utcnow)
+
+    application = relationship("JobApplication", back_populates="recruiter_outreaches")
+    contact = relationship("RecruiterContact", back_populates="outreaches")
+
+
+class FollowUpReminder(Base):
+    """Configurable local follow-up reminders."""
+    __tablename__ = "follow_up_reminders"
+
+    id = Column(Integer, primary_key=True, index=True)
+    application_id = Column(Integer, ForeignKey("job_applications.id"), nullable=True, index=True)
+
+    reminder_type = Column(String(50), nullable=False)  # follow_up, deadline, interview_prep, document_request, completion
+    title = Column(String(255), nullable=False)
+    description = Column(Text, nullable=True)
+    due_date = Column(DateTime, nullable=False)
+    is_completed = Column(Boolean, default=False)
+    completed_at = Column(DateTime, nullable=True)
+    is_dismissed = Column(Boolean, default=False)
+    snooze_until = Column(DateTime, nullable=True)
+
+    created_at = Column(DateTime, default=datetime.datetime.utcnow)
+
+    application = relationship("JobApplication", back_populates="reminders")
