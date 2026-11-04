@@ -23,12 +23,17 @@ def send_windows_notification(title: str, message: str) -> bool:
     Sends native Windows desktop toast notification via PowerShell at ₹0 cost.
     Completely offline and secure.
     """
+    import base64
+    title64 = base64.b64encode(title.encode("utf-8")).decode("ascii")
+    message64 = base64.b64encode(message.encode("utf-8")).decode("ascii")
     ps_script = f"""
+$title = [Text.Encoding]::UTF8.GetString([Convert]::FromBase64String('{title64}'))
+$message = [Text.Encoding]::UTF8.GetString([Convert]::FromBase64String('{message64}'))
 [Windows.UI.Notifications.ToastNotificationManager, Windows.UI.Notifications, ContentType = WindowsRuntime] > $null
 $template = [Windows.UI.Notifications.ToastNotificationManager]::GetTemplateContent([Windows.UI.Notifications.ToastTemplateType]::ToastText02)
 $textNodes = $template.GetElementsByTagName("text")
-$textNodes.Item(0).AppendChild($template.CreateTextNode("{title}")) > $null
-$textNodes.Item(1).AppendChild($template.CreateTextNode("{message}")) > $null
+$textNodes.Item(0).AppendChild($template.CreateTextNode($title)) > $null
+$textNodes.Item(1).AppendChild($template.CreateTextNode($message)) > $null
 $toast = [Windows.UI.Notifications.ToastNotification]::new($template)
 [Windows.UI.Notifications.ToastNotificationManager]::CreateToastNotifier("HSE Career Agent").Show($toast)
 """

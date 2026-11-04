@@ -60,14 +60,11 @@ def generate_tailored_cv_rules(profile: Dict[str, Any], job_company: str, job_ti
     name = profile.get("name", "Raghunath Reddy")
 
     # Tailored Executive Summary
-    summary = (
-        f"{name} is an accomplished Senior Health, Safety, and Environment executive with over {years}+ years "
-        f"of verifiable leadership experience driving {focus} across complex manufacturing environments. "
-        f"Proven track record spearheading HSE governance across 19 manufacturing plants in APAC for global multinational "
-        f"organizations including dsm-firmenich. Holds an M.Tech in Environmental Engineering, B.Tech in Mechanical Engineering, "
-        f"MBA in Human Resources, and Diploma in Industrial Safety, offering {job_company} an authoritative balance of "
-        f"engineering rigor, statutory compliance, and strategic safety culture transformation as {job_title}."
-    )
+    summary = profile.get("summary") or " ".join(filter(None, [
+        name, profile.get("current_role", ""), profile.get("current_company", "")
+    ]))
+
+    summary += f" Target position: {job_title} at {job_company}."
 
     # Reorder competencies to prioritize template & JD matches
     all_skills = list(profile.get("skills", []))
@@ -90,10 +87,10 @@ def generate_tailored_cv_rules(profile: Dict[str, Any], job_company: str, job_ti
     return TailoredCVContent(
         name=name,
         headline=f"{job_title} | Senior HSE Executive",
-        contact_email="nraghunr@gmail.com",
-        contact_phone="+91 95507 33654",
-        contact_location=profile.get("location", "Hyderabad, India"),
-        contact_linkedin="linkedin.com/in/raghunath-reddy-hse",
+        contact_email=profile.get("contact_email", ""),
+        contact_phone=profile.get("contact_phone", ""),
+        contact_location=profile.get("location", ""),
+        contact_linkedin=profile.get("contact_linkedin", ""),
         summary=summary,
         core_competencies=ordered_skills[:10],
         employment_history=history_items,
@@ -119,31 +116,24 @@ def generate_tailored_cover_letter_rules(profile: Dict[str, Any], job_company: s
     years = profile.get("experience_years", 18)
     today_str = datetime.now().strftime("%B %d, %Y")
 
-    p1 = (
-        f"I am writing to express my strong interest in the {job_title} position at {job_company}. "
-        f"With over {years}+ years of distinguished leadership directing occupational health, safety, and environmental (HSE) "
-        f"programs across complex multi-plant manufacturing footprints in APAC and internationally, I bring a proven track record "
-        f"of establishing zero-harm cultures, driving rigorous compliance, and aligning safety governance with core business objectives."
-    )
-
-    p2 = (
-        f"In my current role as Global SHE & Security Manager at dsm-firmenich, I lead comprehensive SHE performance reporting "
-        f"and statutory assurance across 19 manufacturing plants throughout APAC. My career is distinguished by establishing standardized "
-        f"ISO 14001 and ISO 45001 management systems, spearheading comprehensive contractor safety management programs, and executing "
-        f"meticulous incident investigations using Root Cause Analysis (RCA). Holding an M.Tech in Environmental Engineering, a B.Tech in "
-        f"Mechanical Engineering, an MBA in HR, and a Diploma in Industrial Safety, I blend technical engineering discipline with strategic "
-        f"people leadership."
-    )
-
-    p3 = (
-        f"{job_company}'s commitment to operational excellence and employee wellbeing resonates deeply with my professional values. "
-        f"I welcome the opportunity to discuss how my multinational governance experience and hands-on plant safety leadership can "
-        f"deliver immediate value to your HSE programs. Thank you for your consideration, and I look forward to speaking with your team."
-    )
+    # Include only values in the reviewed profile; no fixed employer/degree claims.
+    p1 = (f"I am writing to express my interest in the {job_title} position at {job_company}. "
+          "Please find my tailored CV attached for your review. I would welcome the opportunity "
+          "to discuss the responsibilities of the position and the experience most relevant to your team.")
+    facts = "; ".join(filter(None, [profile.get("current_role"), profile.get("current_company"),
+                                 profile.get("summary")]))
+    p2 = "My confirmed professional background: " + facts
+    p3 = ("I would appreciate the opportunity to discuss the position, its priorities and the qualifications "
+          "required for success. I am happy to clarify any part of my experience and provide supporting "
+          "information during your selection process. Please review my CV alongside this letter for the "
+          "specific roles, skills and qualifications I have provided. I would also welcome a discussion "
+          "about the location, work arrangements and any work authorization requirements that apply to "
+          "the vacancy. Thank you for considering my application and for taking the time to review my "
+          "background. I look forward to hearing from your team about the appropriate next steps.")
 
     return TailoredCoverLetterContent(
         candidate_name=name,
-        candidate_contact=f"{profile.get('location', 'Hyderabad, India')} | +91 95507 33654 | nraghunr@gmail.com",
+        candidate_contact=" | ".join(filter(None, [profile.get("location"), profile.get("contact_phone"), profile.get("contact_email")])),
         date_str=today_str,
         hiring_manager="Hiring Team",
         company_name=job_company,
@@ -155,90 +145,8 @@ def generate_tailored_cover_letter_rules(profile: Dict[str, Any], job_company: s
     )
 
 async def generate_tailored_cv(profile: Dict[str, Any], job_company: str, job_title: str, job_desc: str, template_name: str = "global_regional_hse", consent_given: bool = False) -> TailoredCVContent:
-    """
-    Coordinates tailored CV generation. Calls Gemini if consent is given and key is active;
-    otherwise falls back to deterministic rules-based generator.
-    """
-    api_key = os.getenv("GEMINI_API_KEY", "").strip()
-    if consent_given and api_key:
-        prompt = f"""
-You are an executive resume specialist tailoring a verified senior HSE executive CV for a specific vacancy.
-CANDIDATE FACTS (AUTHORITATIVE, NEVER FABRICATE OUTSIDE THESE FACTS):
-Name: {profile.get('name', 'Raghunath Reddy')}
-Current Role: {profile.get('current_role')} at {profile.get('current_company')}
-Total HSE Experience: {profile.get('experience_years', 18)}+ years
-Degrees: M.Tech Environmental Engineering (completed, awarded), B.Tech Mechanical Engineering, MBA Human Resources, Diploma in Industrial Safety
-ISO Standards: ISO 14001 and ISO 45001 Management Systems
-Scope: Directed APAC HSE performance reporting across 19 manufacturing plants.
-Verified Companies: dsm-firmenich, Wavin-Orbia, Toshiba/TLI, Larsen & Toubro, Dharti Dredging.
-
-VACANCY TARGET:
-Company: {job_company}
-Title: {job_title}
-Job Description:
-{job_desc[:2500]}
-
-STRICT RULES:
-1. Do NOT invent new certifications, employers, dates, metrics, or degrees.
-2. Rewrite the professional summary tailored to {job_company} as {job_title} highlighting verified APAC 19-plant scope and environmental engineering credentials.
-3. Select and order the top 10 core competencies from candidate's verified skills that match the vacancy.
-
-OUTPUT STRICT VALID JSON ONLY matching this structure:
-{{
-  "summary": "...",
-  "core_competencies": ["..."],
-  "evidence_notes": {{"tailoring_focus": "..."}}
-}}
-"""
-        try:
-            ai_res = await call_gemini_api_safe(prompt)
-            if ai_res and "summary" in ai_res:
-                base = generate_tailored_cv_rules(profile, job_company, job_title, job_desc, template_name)
-                base.summary = ai_res.get("summary", base.summary)
-                if ai_res.get("core_competencies"):
-                    base.core_competencies = ai_res["core_competencies"][:10]
-                base.generation_method = "ai"
-                base.evidence_notes = ai_res.get("evidence_notes", {"source": "Gemini AI tailored based on verified profile"})
-                return base
-        except Exception as exc:
-            logger.warning(f"AI CV tailoring failed, falling back to rules engine: {exc}")
-
+    # Deterministic generation preserves reviewed facts. AI job matching remains optional.
     return generate_tailored_cv_rules(profile, job_company, job_title, job_desc, template_name)
 
 async def generate_tailored_cover_letter(profile: Dict[str, Any], job_company: str, job_title: str, job_location: str, job_desc: str, template_name: str = "global_regional_hse", consent_given: bool = False) -> TailoredCoverLetterContent:
-    """
-    Coordinates cover letter generation. Uses Gemini if consent & key available, otherwise rules.
-    """
-    api_key = os.getenv("GEMINI_API_KEY", "").strip()
-    if consent_given and api_key:
-        prompt = f"""
-Write an executive cover letter (250-320 words, 3 concise paragraphs) for {profile.get('name', 'Raghunath Reddy')} applying for {job_title} at {job_company}.
-Use ONLY verified facts:
-- 18+ years HSE leadership across APAC manufacturing.
-- Currently Global SHE & Security Manager at dsm-firmenich managing HSE reporting across 19 plants.
-- M.Tech in Environmental Engineering, B.Tech in Mechanical Engineering, MBA HR, Diploma Industrial Safety.
-- Deep expertise in ISO 14001, ISO 45001, contractor safety, and Root Cause Analysis (RCA).
-Never fabricate company initiatives or false credentials.
-
-OUTPUT STRICT VALID JSON ONLY:
-{{
-  "paragraph_1": "...",
-  "paragraph_2": "...",
-  "paragraph_3": "..."
-}}
-"""
-        try:
-            ai_res = await call_gemini_api_safe(prompt)
-            if ai_res and "paragraph_1" in ai_res:
-                base = generate_tailored_cover_letter_rules(profile, job_company, job_title, job_location, template_name)
-                base.body_paragraphs = [
-                    ai_res["paragraph_1"],
-                    ai_res["paragraph_2"],
-                    ai_res["paragraph_3"]
-                ]
-                base.generation_method = "ai"
-                return base
-        except Exception as exc:
-            logger.warning(f"AI cover letter generation failed, falling back to rules engine: {exc}")
-
     return generate_tailored_cover_letter_rules(profile, job_company, job_title, job_location, template_name)

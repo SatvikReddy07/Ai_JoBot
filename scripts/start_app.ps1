@@ -10,6 +10,7 @@ $PythonExe = Join-Path $BackendDir "venv\Scripts\python.exe"
 # Ensure environment paths are populated
 $env:Path = [System.Environment]::GetEnvironmentVariable("Path","Machine") + ";" + [System.Environment]::GetEnvironmentVariable("Path","User")
 $env:PYTHONPATH = $ProjectRoot
+$env:NEXT_TELEMETRY_DISABLED = "1"
 
 Write-Host "==========================================================" -ForegroundColor Cyan
 Write-Host "         HSE CAREER AGENT - STARTING LOCAL SERVICES       " -ForegroundColor Cyan

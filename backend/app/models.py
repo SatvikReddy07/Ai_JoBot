@@ -400,3 +400,20 @@ class FollowUpReminder(Base):
     created_at = Column(DateTime, default=datetime.datetime.utcnow)
 
     application = relationship("JobApplication", back_populates="reminders")
+
+
+class ApplicationEvent(Base):
+    """Append-only audit trail; additive schema, no existing rows rewritten."""
+    __tablename__ = "application_events"
+    id = Column(Integer, primary_key=True)
+    application_id = Column(Integer, ForeignKey("job_applications.id"), nullable=False, index=True)
+    action = Column(String(80), nullable=False)
+    details = Column(Text, nullable=False)
+    created_at = Column(DateTime, default=datetime.datetime.utcnow)
+
+
+class ReminderDelivery(Base):
+    __tablename__ = "reminder_deliveries"
+    id = Column(Integer, primary_key=True)
+    reminder_id = Column(Integer, ForeignKey("follow_up_reminders.id"), nullable=False, unique=True)
+    delivered_at = Column(DateTime, default=datetime.datetime.utcnow)

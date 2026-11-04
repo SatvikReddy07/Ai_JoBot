@@ -1,3 +1,10 @@
+import sys
+sys.modules["backend.tests.conftest"] = sys.modules[__name__]
+import os
+import tempfile
+_test_data = tempfile.TemporaryDirectory(prefix="hse_tests_")
+os.environ["HSE_DATA_DIR"] = _test_data.name
+os.environ.pop("GEMINI_API_KEY", None)
 import pytest
 from fastapi.testclient import TestClient
 from sqlalchemy import create_engine

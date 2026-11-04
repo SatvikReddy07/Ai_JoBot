@@ -8,7 +8,7 @@ from typing import Dict, Any, Optional, List
 
 from sqlalchemy.orm import Session
 
-from backend.app.database import BASE_DIR
+from backend.app.database import BASE_DIR, DATA_DIR
 from backend.app.models import (
     Job, UserProfile, ApplicationPackage, GeneratedDocument, 
     DocumentVersion, DocumentApproval, GenerationAuditLog
@@ -24,7 +24,7 @@ from backend.services.ats_service import analyze_ats_keywords
 
 logger = logging.getLogger(__name__)
 
-PACKAGES_DIR = BASE_DIR / "data" / "packages"
+PACKAGES_DIR = DATA_DIR / "packages"
 PACKAGES_DIR.mkdir(parents=True, exist_ok=True)
 
 def sanitize_filename(text: str) -> str:
@@ -86,29 +86,10 @@ def create_application_package(
     pkg_dir.mkdir(parents=True, exist_ok=True)
     package.package_dir = str(pkg_dir)
 
-    # 4. Generate Tailored Content (async-safe / sync helper)
-    import asyncio
-    try:
-        loop = asyncio.get_event_loop()
-    except RuntimeError:
-        loop = asyncio.new_event_loop()
-        asyncio.set_event_loop(loop)
-
-    if loop.is_running():
-        # Inside async context
-        cv_data = loop.run_until_complete(
-            generate_tailored_cv(profile_dict, job.company, job.title, job.description, template_name, consent_given)
-        )
-        cl_data = loop.run_until_complete(
-            generate_tailored_cover_letter(profile_dict, job.company, job.title, job.location, job.description, template_name, consent_given)
-        )
-    else:
-        cv_data = asyncio.run(
-            generate_tailored_cv(profile_dict, job.company, job.title, job.description, template_name, consent_given)
-        )
-        cl_data = asyncio.run(
-            generate_tailored_cover_letter(profile_dict, job.company, job.title, job.location, job.description, template_name, consent_given)
-        )
+    # 4. Generate local content directly; avoid nested event loops in API workers.
+    from backend.services.tailoring_service import generate_tailored_cv_rules, generate_tailored_cover_letter_rules
+    cv_data = generate_tailored_cv_rules(profile_dict, job.company, job.title, job.description, template_name)
+    cl_data = generate_tailored_cover_letter_rules(profile_dict, job.company, job.title, job.location, template_name)
 
     package.generation_method = cv_data.generation_method
 

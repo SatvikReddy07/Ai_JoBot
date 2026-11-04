@@ -21,6 +21,7 @@ export type NavTab =
   | "high_matches"
   | "profile"
   | "studio"
+  | "applications"
   | "saved"
   | "tracker"
   | "history"
@@ -40,6 +41,7 @@ export const Sidebar: React.FC<SidebarProps> = ({
   highMatchCount
 }) => {
   const navItems = [
+    {id: "applications" as NavTab, label: "Application Control Center", icon: FileCheck, badge: null},
     {
       id: "dashboard" as NavTab,
       label: "Dashboard",

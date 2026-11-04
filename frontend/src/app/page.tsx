@@ -14,6 +14,7 @@ import { EmployerManager } from "../components/EmployerManager";
 import { SearchHistoryView } from "../components/SearchHistoryView";
 import { SettingsView } from "../components/SettingsView";
 import { CareerProfileView } from "../components/CareerProfileView";
+import { ApplicationControlCenter } from "../components/ApplicationControlCenter";
 import { ApplicationStudioView } from "../components/ApplicationStudioView";
 
 import {
@@ -239,6 +240,7 @@ export default function Home() {
       title: "My Career Profile",
       subtitle: "Master CV, verified professional background, and AI career matching configuration"
     },
+    applications: { title: "Application Control Center", subtitle: "Review eligibility, prepare approved documents and track manual applications" },
     studio: {
       title: "AI Application Studio",
       subtitle: "Tailor executive CVs, generate cover letters, review ATS alignment & export packages"
@@ -422,6 +424,7 @@ export default function Home() {
           )}
 
           {/* TAB: APPLICATION STUDIO (PHASE 3) */}
+          {currentTab === "applications" && <ApplicationControlCenter onStudio={handleOpenStudio} />}
           {currentTab === "studio" && (
             <ApplicationStudioView initialJobId={studioTargetJobId} />
           )}

@@ -269,10 +269,10 @@ class DashboardStatsResponse(BaseModel):
 class TailoredCVContent(BaseModel):
     name: str = "Raghunath Reddy"
     headline: str = "Global SHE & Security Manager"
-    contact_email: str = "raghunath.hse@gmail.com"
-    contact_phone: str = "+91 98490 00000"
-    contact_location: str = "Hyderabad, India"
-    contact_linkedin: str = "linkedin.com/in/raghunath-reddy-hse"
+    contact_email: str = ""
+    contact_phone: str = ""
+    contact_location: str = ""
+    contact_linkedin: str = ""
     summary: str
     core_competencies: List[str] = []
     employment_history: List[EmploymentHistoryItem] = []
@@ -288,7 +288,7 @@ class TailoredCVContent(BaseModel):
 
 class TailoredCoverLetterContent(BaseModel):
     candidate_name: str = "Raghunath Reddy"
-    candidate_contact: str = "Hyderabad, India | +91 98490 00000 | raghunath.hse@gmail.com"
+    candidate_contact: str = ""
     date_str: str
     hiring_manager: str = "Hiring Team"
     company_name: str

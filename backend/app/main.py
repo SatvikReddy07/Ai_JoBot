@@ -8,10 +8,12 @@ from datetime import datetime, date
 from fastapi import FastAPI, Depends, HTTPException, Query, Response, UploadFile, File
 from fastapi.responses import FileResponse
 from fastapi.middleware.cors import CORSMiddleware
+from starlette.middleware.trustedhost import TrustedHostMiddleware
+from starlette.responses import JSONResponse
 from sqlalchemy.orm import Session
 from sqlalchemy import func, desc, asc
 
-from .database import engine, get_db, Base
+from .database import engine, get_db, Base, DATA_DIR, initialize_schema
 from .models import (
     Job, EmployerBoard, SearchPreference, SearchHistory, ApplicationHistory,
     MasterCV, UserProfile, AIJobAssessment, AIUsageLog,
@@ -51,17 +53,27 @@ logger = logging.getLogger("hse_agent")
 
 # Ensure CV storage directory exists
 BASE_DIR = Path(__file__).resolve().parent.parent.parent
-CV_DIR = BASE_DIR / "data" / "cv"
+CV_DIR = DATA_DIR / "cv"
 CV_DIR.mkdir(parents=True, exist_ok=True)
 
 # Initialize database schema
-Base.metadata.create_all(bind=engine)
+initialize_schema()
 
 app = FastAPI(
     title="HSE Career Agent API",
     description="Backend API for personal HSE leadership career discovery, AI matching, and tracking",
     version="2.0.0"
 )
+
+# Reject DNS rebinding and unsafe cross-origin requests, including same-site port attacks.
+app.add_middleware(TrustedHostMiddleware, allowed_hosts=["localhost", "127.0.0.1", "testserver"])
+
+@app.middleware("http")
+async def local_origin_guard(request, call_next):
+    origin = request.headers.get("origin")
+    if origin and origin not in {"http://localhost:3000", "http://127.0.0.1:3000", "http://localhost:3001", "http://127.0.0.1:3001"}:
+        return JSONResponse({"detail": "Untrusted browser origin."}, status_code=403)
+    return await call_next(request)
 
 # Localhost security and CORS
 app.add_middleware(
@@ -96,7 +108,7 @@ def get_or_create_user_profile(db: Session) -> UserProfile:
                 {"company": "dsm-firmenich", "role": "Global SHE & Security Manager", "location": "Hyderabad", "highlights": ["APAC reporting across 19 plants", "Overseeing corporate workplace HSE and governance"], "source": "verified_profile"},
                 {"company": "Wavin-Orbia", "role": "Regional HSE Lead", "location": "India", "highlights": ["Multi-site workplace safety leadership", "Contractor safety management"], "source": "verified_profile"},
                 {"company": "Toshiba/TLI", "role": "EHS Manager", "location": "India", "highlights": ["ISO 14001 and ISO 45001 implementation", "Statutory compliance and audits"], "source": "verified_profile"},
-                {"company": "Larsen & Toubro", "role": "HSE Engineer / In-Charge", "location": "India", "highlights": ["Plant and project site safety enforcement", "Incident investigation & RCA"], "source": "verified_profile"},
+                {"company": "Larsen & Toubro", "role": "Assistant Manager — Maintenance and Operations (through November 2016)", "location": "India", "highlights": ["Preventive and breakdown maintenance; plant operations", "Equipment reliability, installation, commissioning and projects", "Team, contractor, manpower, maintenance budget and procurement management"], "source": "verified_profile"},
                 {"company": "Dharti Dredging", "role": "Safety Officer / In-Charge", "location": "India", "highlights": ["Industrial safety and marine operations risk management"], "source": "verified_profile"}
             ]),
             qualifications=json.dumps([
@@ -248,8 +260,8 @@ def health_check():
     return {
         "status": "ok",
         "app": "HSE Career Agent",
-        "version": "3.1.0",
-        "phase": 3,
+        "version": "4.0.0",
+        "phase": 4,
         "timestamp": datetime.utcnow().isoformat()
     }
 
@@ -445,6 +457,9 @@ def update_job_status(job_id: int, payload: JobStatusUpdate, db: Session = Depen
     if payload.status not in valid_statuses:
         raise HTTPException(status_code=400, detail=f"Invalid status. Must be one of: {', '.join(valid_statuses)}")
 
+    from .models import JobApplication
+    if db.query(JobApplication).filter_by(job_id=job_id).first():
+        raise HTTPException(status_code=409, detail="Use Application Control Center for this application's stage and confirmation.")
     previous_status = job.application_status
     job.application_status = payload.status
     if payload.notes is not None:
@@ -633,31 +648,38 @@ def delete_employer_board(board_id: int, db: Session = Depends(get_db)):
 @app.post("/api/profile/upload-cv", response_model=CVUploadResponse)
 async def upload_master_cv(file: UploadFile = File(...), db: Session = Depends(get_db)):
 
-    filename = file.filename or "cv_upload"
+    filename = Path((file.filename or "cv_upload").replace("\\", "/")).name
     ext = Path(filename).suffix.lower()
 
-    if ext not in [".pdf", ".docx", ".doc"]:
+    if ext not in [".pdf", ".docx"]:
         raise HTTPException(
             status_code=400,
             detail=f"Invalid file type '{ext}'. Only .pdf and .docx files are permitted."
         )
 
     # Save file securely to local data/cv directory
-    timestamp_prefix = datetime.utcnow().strftime("%Y%m%d_%H%M%S")
-    safe_filename = f"{timestamp_prefix}_{filename}"
+    timestamp_prefix = __import__("uuid").uuid4().hex
+    safe_filename = f"{timestamp_prefix}{ext}"
     target_path = CV_DIR / safe_filename
 
     try:
         with open(target_path, "wb") as buffer:
-            shutil.copyfileobj(file.file, buffer)
+            total = 0
+            while chunk := file.file.read(1024 * 1024):
+                total += len(chunk)
+                if total > 10 * 1024 * 1024:
+                    raise HTTPException(status_code=413, detail="CV must be at most 10 MiB.")
+                buffer.write(chunk)
         file_size = target_path.stat().st_size
         if file_size == 0:
             target_path.unlink(missing_ok=True)
             raise HTTPException(status_code=400, detail="Uploaded file is empty (0 bytes).")
     except HTTPException:
+        target_path.unlink(missing_ok=True)
         raise
     except Exception as exc:
-        raise HTTPException(status_code=500, detail=f"Failed to save uploaded CV: {exc}")
+        target_path.unlink(missing_ok=True)
+        raise HTTPException(status_code=500, detail="Failed to save uploaded CV.")
 
     # Extract text using PyMuPDF or python-docx
     try:
@@ -689,7 +711,7 @@ async def upload_master_cv(file: UploadFile = File(...), db: Session = Depends(g
 
     # Parse and update UserProfile
     profile = get_or_create_user_profile(db)
-    parsed = parse_cv_content(raw_text)
+    parsed = parse_cv_content(raw_text, existing_profile=format_user_profile_response(profile))
 
     profile.name = parsed["name"]
     profile.current_role = parsed["current_role"]
@@ -711,7 +733,7 @@ async def upload_master_cv(file: UploadFile = File(...), db: Session = Depends(g
     db.refresh(profile)
 
     return {
-        "message": f"CV '{filename}' successfully uploaded and parsed.",
+        "message": f"CV '{filename}' uploaded. Confirmed profile preserved; review the CV and edit profile fields explicitly.",
         "cv_id": master_cv.id,
         "filename": filename,
         "profile": format_user_profile_response(profile)
@@ -780,10 +802,18 @@ def set_ai_consent(payload: UserConsentToggle, db: Session = Depends(get_db)):
 @app.get("/api/profile/cv/download")
 def download_master_cv(db: Session = Depends(get_db)):
     cv = db.query(MasterCV).filter(MasterCV.is_active == True).order_by(desc(MasterCV.extracted_at)).first()
-    if not cv or not Path(cv.stored_path).exists():
+    if not cv:
         raise HTTPException(status_code=404, detail="No active master CV file found.")
+    path = Path(cv.stored_path).resolve()
+    if not path.exists():
+        # Resolve legacy Windows paths locally without changing the stored record.
+        path = (CV_DIR / Path(cv.stored_path.replace("\\", "/")).name).resolve()
+    if not path.is_relative_to(CV_DIR.resolve()):
+        raise HTTPException(status_code=403, detail="CV path is outside local CV storage.")
+    if not path.is_file():
+        raise HTTPException(status_code=404, detail="Master CV file unavailable in local storage.")
     return FileResponse(
-        path=cv.stored_path,
+        path=str(path),
         filename=cv.filename,
         media_type="application/octet-stream"
     )
@@ -1118,3 +1148,7 @@ def test_notification():
         "message": "Desktop toast notification dispatched successfully" if success else "Notification attempted via Windows PowerShell."
     }
 
+
+# Additive Phase 4 routes; legacy endpoints remain available.
+from .phase4 import router as phase4_router
+app.include_router(phase4_router)
