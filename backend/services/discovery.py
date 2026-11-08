@@ -1,7 +1,6 @@
 import json
 import logging
-import re
-from datetime import datetime, timezone
+from datetime import datetime
 from typing import Dict, Any, List, Optional
 from sqlalchemy.orm import Session
 
@@ -15,31 +14,50 @@ from .notification_service import check_and_notify_high_match_job
 logger = logging.getLogger(__name__)
 _matcher = HSEJobMatcher()
 
-# Default reputable multinational employer boards using Greenhouse and Lever
+# Public ATS boards verified on 2026-11-08. Availability and eligibility can change.
+# These are sources, not recommendations or evidence of work authorization.
 DEFAULT_BOARDS = [
-    {"company_name": "Canva", "platform": "greenhouse", "board_token": "canva", "is_enabled": True},
-    {"company_name": "Stripe", "platform": "greenhouse", "board_token": "stripe", "is_enabled": True},
-    {"company_name": "Deliveroo", "platform": "greenhouse", "board_token": "deliveroo", "is_enabled": True},
-    {"company_name": "GitLab", "platform": "greenhouse", "board_token": "gitlab", "is_enabled": True},
-    {"company_name": "Gusto", "platform": "greenhouse", "board_token": "gusto", "is_enabled": True},
-    {"company_name": "Atlassian", "platform": "lever", "board_token": "atlassian", "is_enabled": True},
-    {"company_name": "Miro", "platform": "lever", "board_token": "miro", "is_enabled": True},
+    {"company_name": "AcuTech Group, Inc.", "platform": "greenhouse", "board_token": "acutechgroupinc", "is_enabled": True},
+    {"company_name": "Isar Aerospace SE", "platform": "greenhouse", "board_token": "isaraerospace", "is_enabled": True},
+    {"company_name": "Agile Robots SE", "platform": "greenhouse", "board_token": "agilerobotsse", "is_enabled": True},
+    {"company_name": "Anduril Industries", "platform": "greenhouse", "board_token": "andurilindustries", "is_enabled": True},
+    {"company_name": "EverOn Data Center Services", "platform": "lever", "board_token": "everondcs", "is_enabled": True},
+    {"company_name": "Artis BioSolutions", "platform": "lever", "board_token": "landmarkbio", "is_enabled": True},
+    {"company_name": "Zero Carbon Systems", "platform": "lever", "board_token": "zerocarbonsystems", "is_enabled": True},
 ]
+LEGACY_BOARDS = {
+    ("Canva", "greenhouse", "canva"), ("Stripe", "greenhouse", "stripe"),
+    ("Deliveroo", "greenhouse", "deliveroo"), ("GitLab", "greenhouse", "gitlab"),
+    ("Gusto", "greenhouse", "gusto"), ("Atlassian", "lever", "atlassian"),
+    ("Miro", "lever", "miro"),
+}
+RETIRED_TOKENS = {"canva", "atlassian", "miro"}
+CATALOG_MARKER = "retired: unavailable ATS feed; catalog 2026-11-08"
+
 
 def init_default_boards(db: Session):
-    """Seed default employer boards if empty."""
-    existing_count = db.query(EmployerBoard).count()
-    if existing_count == 0:
-        for b in DEFAULT_BOARDS:
-            board = EmployerBoard(
-                company_name=b["company_name"],
-                platform=b["platform"],
-                board_token=b["board_token"],
-                is_enabled=b["is_enabled"],
-                created_at=datetime.utcnow()
-            )
-            db.add(board)
-        db.commit()
+    """Seed fresh installs; upgrade the exact old catalog once without deleting records.
+
+    The retired rows retain a marker so later user enable/delete decisions are
+    respected. Custom-only catalogs are never silently expanded or disabled.
+    """
+    boards = db.query(EmployerBoard).all()
+    identities = {(b.company_name, b.platform, b.board_token) for b in boards}
+    upgrade = LEGACY_BOARDS.issubset(identities) and not any(
+        b.last_status == CATALOG_MARKER for b in boards
+    )
+    if boards and not upgrade:
+        return
+    if upgrade:
+        for board in boards:
+            if (board.company_name, board.platform, board.board_token) in LEGACY_BOARDS and board.board_token in RETIRED_TOKENS:
+                board.is_enabled = False
+                board.last_status = CATALOG_MARKER
+    tokens = {b.board_token for b in boards}
+    for entry in DEFAULT_BOARDS:
+        if entry["board_token"] not in tokens:
+            db.add(EmployerBoard(**entry, created_at=datetime.utcnow()))
+    db.commit()
 
 def init_search_preferences(db: Session) -> SearchPreference:
     """Ensure initial search preferences exist."""
@@ -76,35 +94,13 @@ def init_search_preferences(db: Session) -> SearchPreference:
     return pref
 
 def is_hse_relevant(title: str, description: str) -> bool:
+    """Use the same occupational gate for discovery and scoring.
+
+    The matcher rejects software/sales roles and recognises environmental
+    compliance and industrial safety alongside explicit HSE titles.
     """
-    Check if role is relevant to HSE, Workplace Safety, Environment, or ESG leadership.
-    Uses regex word boundaries and rejects non-HSE titles to prevent false positive discovery.
-    """
-    title_lower = title.lower()
-    desc_sample = description[:1200].lower()
+    return _matcher.classify_occupational_relevance(title, description)[1]
 
-    # Reject non-HSE domain titles (e.g., Software Engineering Manager, Sales Lead) unless explicitly HSE
-    is_core_hse_title = any(re.search(pat, title_lower) for pat in _matcher.HSE_CORE_TITLE_PATTERNS)
-    is_non_hse = any(re.search(pat, title_lower) for pat in _matcher.NON_HSE_DOMAINS)
-    if is_non_hse and not is_core_hse_title:
-        return False
-
-    # Title check first
-    if is_core_hse_title:
-        return True
-
-    # Description check using word-boundary regex patterns
-    hse_desc_patterns = [
-        r"\bhse\b", r"\behs\b", r"\bshe&s\b", r"\bshe\s+(manager|director|lead|governance)\b",
-        r"\bhsw\b", r"\bqhse\b",
-        r"\bhealth\s*(and|&)\s*safety\b", r"\bworkplace\s*health\b", r"\bworkplace\s*safety\b",
-        r"\boccupational\s*(health|safety)\b", r"\benvironment(al)?\s*health\b",
-        r"\bsafety\s*(manager|lead|director|governance|assurance|framework|culture)\b",
-        r"\bhead\s*of\s*safety\b", r"\bincident\s*investigation\b", r"\bprocess\s*safety\b",
-        r"\biso\s*45001\b", r"\biso\s*14001\b", r"\bhazop\b", r"\bltif\b", r"\btrir\b"
-    ]
-
-    return any(re.search(p, desc_sample) for p in hse_desc_patterns)
 
 def belongs_to_board(job, board):
     """Reconcile only native URLs with provable ownership; never guess custom links."""
@@ -112,7 +108,7 @@ def belongs_to_board(job, board):
     if job.source != board.platform.lower() or job.company != board.company_name:
         return False
     parsed = urlsplit(job.url)
-    domains = {"greenhouse": {"boards.greenhouse.io", "job-boards.greenhouse.io"},
+    domains = {"greenhouse": {"boards.greenhouse.io", "job-boards.greenhouse.io", "job-boards.eu.greenhouse.io"},
                "lever": {"jobs.lever.co"}}
     if parsed.hostname not in domains.get(board.platform.lower(), set()): return False
     parts = [unquote(p) for p in parsed.path.split("/") if p]

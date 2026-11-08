@@ -50,6 +50,11 @@ COUNTRY_PATTERNS = {
     "United Kingdom": [
         r"\bunited kingdom\b", r"\buk\b", r"\blondon\b", r"\bmanchester\b", r"\bbirmingham\b"
     ],
+    "United States": [r"\bunited states\b", r"\busa\b", r"\bu\.s\.a?\b"],
+    "Canada": [r"\bcanada\b"],
+    "Sweden": [r"\bsweden\b", r"\bstockholm\b", r"\bkiruna\b"],
+    "Norway": [r"\bnorway\b", r"\boslo\b", r"\bandenes\b"],
+    "Denmark": [r"\bdenmark\b", r"\bcopenhagen\b"],
     "Switzerland": [
         r"\bswitzerland\b", r"\bzurich\b", r"\bzürich\b", r"\bbalsthal\b", r"\bbasel\b", r"\bgeneva\b"
     ],
@@ -59,6 +64,11 @@ def clean_html(raw_html: str) -> str:
     """Strip HTML tags and unescape HTML entities to clean text."""
     if not raw_html:
         return ""
+    # Public Greenhouse content is often entity-encoded HTML. Decode before
+    # removing tags so markup does not consume the matching evidence window.
+    for _ in range(2):
+        raw_html = html.unescape(raw_html)
+    raw_html = re.sub(r"<(script|style)\b[^>]*>.*?</\1\s*>", " ", raw_html, flags=re.I | re.S)
     # Convert breaks and paragraphs to newlines
     text = re.sub(r'<(br|p|div|li)[^>]*>', '\n', raw_html, flags=re.IGNORECASE)
     # Strip all other tags

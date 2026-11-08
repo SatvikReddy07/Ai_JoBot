@@ -58,7 +58,7 @@ export const SearchHistoryView: React.FC<SearchHistoryViewProps> = ({ history })
                     ) : (
                       <>
                         <AlertTriangle className="w-3 h-3" />
-                        <span>Failed / Partial</span>
+                        <span>{run.status === "partial" ? "Partial" : run.status === "running" ? "Running" : "Failed"}</span>
                       </>
                     )}
                   </span>

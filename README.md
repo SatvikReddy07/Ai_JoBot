@@ -138,3 +138,15 @@ See [STABILIZATION_REPORT.md](STABILIZATION_REPORT.md) for the current handover 
 Complete successful native ATS snapshots can mark missing jobs inactive without deleting them; failures, malformed snapshots, custom URLs and ambiguous ownership never cause guessed closures. Saved jobs and the tracker retain inactive history. The legacy tracker fetches all pages and displays Phase 4-managed applications; change their stages in the Control Center.
 
 No new dependency or schema migration is needed for this update. Pull the feature branch, restart the backend and rebuild the frontend if using `npm start`/the production launcher. Review and reapprove existing prepared applications after the matching-policy change. Native Mac notifications and real employer forms remain subject to the limits above.
+
+## Verified HSE discovery sources
+
+The default public feeds now cover AcuTech, Isar Aerospace, Agile Robots, Anduril, EverOn Data Center Services, Artis BioSolutions and Zero Carbon Systems. The unchanged legacy catalog upgrades once, retaining but disabling the unavailable Canva/Atlassian/Miro feed records. Existing jobs, profile, CVs and applications remain. Settings → **Configured Employer Career Feeds** shows source status and raw posting counts; the counts are not suitable-job totals. Custom-only catalogs are not silently changed.
+
+Discovery requires explicit occupational scope in the title and contextual matching, so incidental safety policies, Trust & Safety, system/functional safety or product testing do not become HSE recommendations. Unknown sponsorship remains unknown. Sources cover selected employers, not the entire market; see [the coverage report](DISCOVERY_COVERAGE_REPORT.md).
+
+Read-only live diagnostic (no candidate data or application writes):
+
+```bash
+backend/venv/bin/python scripts/audit_public_feeds.py
+```

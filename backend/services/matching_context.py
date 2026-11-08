@@ -3,7 +3,7 @@ import json
 from sqlalchemy.orm import object_session
 from backend.app.models import Job, UserProfile, SearchPreference
 
-POLICY_VERSION = "profile-matching-v2"
+POLICY_VERSION = "profile-matching-v3"
 LIST_FIELDS = ("employment_history", "qualifications", "skills", "certifications", "achievements", "target_countries", "target_titles")
 
 

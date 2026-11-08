@@ -153,3 +153,13 @@ The first fresh Mac discovery exposed three 404 feeds (Canva/Greenhouse, Atlassi
 Corrected mixed feed results to `partial`, exposed succeeded/failed feed and fetched-posting counts through the API, used the actual result status/message in the UI notification, and wrapped full history diagnostics. Existing history is preserved; historical `success` rows are not rewritten. No database schema, candidate records or board definitions change. The three unavailable board URLs still need verified replacement/provider support; broader industrial HSE coverage remains unfinished. New runs distinguish fetched postings from accepted HSE vacancies.
 
 Validation: 126 tests passed with browser and launcher integration enabled. The added API regression covers one successful feed plus a failed feed, rejected unrelated software posting, counters, stored diagnostics and saved-job preservation. Frontend TypeScript checking and production build passed.
+
+## Latest checkpoint — discovery coverage, 2026-11-08
+
+This supersedes the earlier note that replacement feeds were still outstanding. Seven live-verified public industrial/process-safety/data-centre/life-science sources are now the default catalog. The complete old catalog upgrades once by retaining/disabling the three 404 feeds and adding these sources; custom catalogs and existing candidate/application data are preserved. See DISCOVERY_COVERAGE_REPORT.md for exact upgrade behavior, source links, limitations and commands.
+
+Fixed entity-encoded HTML evidence, aligned discovery with the occupational classifier, recognised environmental/PSM/OHS/WHS/HSSE title variants, and rejected incidental safety wording plus functional/system/trust-safety domains. Conservative explicit-title gating can miss unconventional HSE job titles; it deliberately avoids inventing occupational relevance. Policy is profile-matching-v3, requiring review of stale preparations/caches.
+
+Verified public snapshots: 7/7 successful, 2,928 postings, 22 HSE-accepted vacancies. The real connector/discovery pipeline replayed those snapshots into isolated SQLite and stored 22 jobs, including AcuTech India and Singapore process-safety roles. This is job discovery, not candidate eligibility or evidence of sponsorship/submission.
+
+Checks: 163 tests passed with browser/launcher integration, TypeScript and production build passed, full synthetic UI workflow passed with no JavaScript errors. Six workspace SQLite files stayed byte-identical; integrity and foreign keys passed. No schema or paid dependency added. Native Mac checks, actual user document/eligibility acceptance and permitted live application preparation still require validation. No merge into main.

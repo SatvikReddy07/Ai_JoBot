@@ -99,7 +99,7 @@ export const EmployerManager: React.FC<EmployerManagerProps> = ({
             Configured Employer Career Feeds
           </h3>
           <p className="text-xs text-slate-400">
-            Manage live Greenhouse and Lever employer boards. Enable, disable, or add multinational employers.
+            Manage public Greenhouse and Lever feeds. These cover selected employers, not the whole job market. A listed job still needs eligibility review.
           </p>
         </div>
         <button
@@ -121,7 +121,7 @@ export const EmployerManager: React.FC<EmployerManagerProps> = ({
               <th className="py-3 px-4 font-semibold">Board Token</th>
               <th className="py-3 px-4 font-semibold">Status</th>
               <th className="py-3 px-4 font-semibold">Last Checked</th>
-              <th className="py-3 px-4 font-semibold">Jobs Discovered</th>
+              <th className="py-3 px-4 font-semibold">Postings in Feed</th>
               <th className="py-3 px-4 font-semibold text-right">Actions</th>
             </tr>
           </thead>
@@ -130,6 +130,7 @@ export const EmployerManager: React.FC<EmployerManagerProps> = ({
               <tr key={board.id} className="hover:bg-slate-800/40 transition-colors">
                 <td className="py-3.5 px-4 font-semibold text-white">
                   {board.company_name}
+                  <p className="text-[11px] text-slate-400 font-normal mt-1 whitespace-normal break-words">{board.last_status || "Not checked"}</p>
                 </td>
                 <td className="py-3.5 px-4">
                   <span className={`text-[11px] px-2 py-0.5 rounded font-mono uppercase ${

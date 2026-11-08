@@ -80,6 +80,8 @@ class HSEJobMatcher:
     ]
 
     HSE_CORE_TITLE_PATTERNS = [
+        r"\bohs\b", r"\bwhs\b", r"\bhsse\b", r"\beh&s\b",
+        r"\bhealth\s*,\s*safety\s*(?:and|&)\s*environment(?:al)?\b",
         r"\bhse\b", r"\behs\b", r"\bshe\b", r"\bshe&s\b", r"\bhsw\b", r"\bqhse\b",
         r"\bhealth\s*(and|&)\s*safety\b", r"\bworkplace\s*health\b", r"\bworkplace\s*safety\b",
         r"\boccupational\s*health\b", r"\boccupational\s*safety\b", r"\benvironment(al)?\s*health\b",
@@ -90,7 +92,12 @@ class HSEJobMatcher:
     ]
 
     # Explicit Non-HSE Domain Titles (Strictly Disqualified from HSE Matches)
-    NON_HSE_DOMAINS = [
+    NON_OCCUPATIONAL_SAFETY_PATTERNS = [
+        r"\benvironmental\s*test(?:ing)?\b",
+        r"\btrust\s*(?:and|&)\s*safety\b", r"\bfunctional\s*safety\b",
+        r"\bsystems?\s*(?:and\s*)?safety\b",
+    ]
+    NON_HSE_DOMAINS = NON_OCCUPATIONAL_SAFETY_PATTERNS + [
         r"\bsoftware\b", r"\bfrontend\b", r"\bbackend\b", r"\bfull\s*stack\b", r"\bdevops\b",
         r"\bcloud\b", r"\bdata\s*engineer\b", r"\bdata\s*science\b", r"\bdata\s*analyst\b",
         r"\bfp&a\b", r"\bfinance\b", r"\baccounting\b", r"\bsocial\s*media\b", r"\brecruiting\b",
@@ -170,12 +177,20 @@ class HSEJobMatcher:
         is_non_hse_domain = any(re.search(pat, title_lower) for pat in self.NON_HSE_DOMAINS)
 
         # 1. Non-HSE Domain Check (Disqualified from HSE leadership)
-        if is_non_hse_domain and not is_core_hse_title:
+        non_occupational_safety = any(re.search(p, title_lower) for p in self.NON_OCCUPATIONAL_SAFETY_PATTERNS)
+        explicit_hse = re.search(r"\b(?:hse|ehs|hsse|qhse|ohs|whs|hsw)\b|\bhealth\s*(?:,|and|&)\s*safety\b", title_lower)
+        if (is_non_hse_domain and not is_core_hse_title) or (non_occupational_safety and not explicit_hse):
             return (
                 OccupationalCategory.UNRELATED,
                 False,
                 "Excluded: Non-HSE domain (Software/IT, Sales, Finance, Revenue, or Corporate Operations)."
             )
+
+        # An incidental policy paragraph or reporting line is not occupational scope.
+        # Prefer review of unusual titles over silently recommending unrelated work.
+        if not re.search(r"\b(?:hse|ehs|she|hsw|qhse|hsse|whs|ohs|psm|hazop|hira|loss\s+prevention|safety|environment(?:al)?|sustainability|esg)\b", title_lower) and not is_core_hse_title:
+            return (OccupationalCategory.UNRELATED, False,
+                    "Title does not establish HSE scope; incidental safety wording is insufficient.")
 
         # 2. Process Safety / Industrial Safety
         process_pats = [
