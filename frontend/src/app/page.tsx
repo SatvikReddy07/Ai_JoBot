@@ -177,8 +177,8 @@ export default function Home() {
     try {
       const res = await runSearchNow();
       setNotification({
-        type: "success",
-        text: `Discovery completed! Found ${res.jobs_new} new and updated ${res.jobs_updated} vacancies across ${res.boards_searched} employer feeds.`
+        type: res.status === "success" ? "success" : "error",
+        text: res.message
       });
       await Promise.all([loadDashboardData(), loadJobs(), loadTrackerJobs()]);
     } catch (err: any) {

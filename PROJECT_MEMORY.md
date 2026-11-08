@@ -145,3 +145,11 @@ If the pull refuses because of local commits/changes or divergence, stop and rep
 ## Next maintainer instructions
 
 Inspect the current remote/local branch before editing. Reuse these verified tests rather than restarting Phase 1. Run targeted tests for meaningful changes, then the full required checks. Use synthetic data for automated external-workflow tests. Label live integration limits honestly, record actual confirmations only, and publish tested work to the existing feature branch when authorized. See `STABILIZATION_REPORT.md`, `PROJECT_STATUS.md` and `README.md` for implementation details.
+
+## Discovery diagnostics follow-up — 2026-11-08
+
+The first fresh Mac discovery exposed three 404 feeds (Canva/Greenhouse, Atlassian/Lever and Miro/Lever). Four other feeds completed without recorded errors, but no HSE vacancies were stored. Historical runs did not expose raw posting totals, so they cannot distinguish empty feeds from all postings being filtered out. Do not infer a profile, Gemini or database failure from this alone.
+
+Corrected mixed feed results to `partial`, exposed succeeded/failed feed and fetched-posting counts through the API, used the actual result status/message in the UI notification, and wrapped full history diagnostics. Existing history is preserved; historical `success` rows are not rewritten. No database schema, candidate records or board definitions change. The three unavailable board URLs still need verified replacement/provider support; broader industrial HSE coverage remains unfinished. New runs distinguish fetched postings from accepted HSE vacancies.
+
+Validation: 126 tests passed with browser and launcher integration enabled. The added API regression covers one successful feed plus a failed feed, rejected unrelated software posting, counters, stored diagnostics and saved-job preservation. Frontend TypeScript checking and production build passed.

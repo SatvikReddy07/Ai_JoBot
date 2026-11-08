@@ -72,7 +72,7 @@ export const SearchHistoryView: React.FC<SearchHistoryViewProps> = ({ history })
                 <td className="py-3.5 px-4 font-mono text-blue-400">
                   {run.jobs_updated}
                 </td>
-                <td className="py-3.5 px-4 text-slate-400 max-w-xs truncate" title={run.error_message || ""}>
+                <td className="py-3.5 px-4 text-slate-400 max-w-lg whitespace-pre-wrap break-words" title={run.error_message || ""}>
                   {run.error_message ? (
                     <span className="text-amber-400/90">{run.error_message}</span>
                   ) : (

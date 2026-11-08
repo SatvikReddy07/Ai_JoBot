@@ -501,11 +501,15 @@ async def trigger_search(board_id: Optional[int] = None, db: Session = Depends(g
     result = await run_discovery_service(db, board_id=board_id)
     return {
         "status": result["status"],
+        "boards_succeeded": result["boards_succeeded"],
+        "boards_failed": result["boards_failed"],
+        "postings_fetched": result["postings_fetched"],
+        "errors": result["errors"],
         "boards_searched": result["boards_searched"],
         "jobs_found": result["jobs_found"],
         "jobs_new": result["jobs_new"],
         "jobs_updated": result["jobs_updated"],
-        "message": f"Search completed: {result['jobs_new']} new, {result['jobs_updated']} updated across {result['boards_searched']} boards."
+        "message": f"Discovery {result['status']}: {result['boards_succeeded']}/{result['boards_searched']} feeds succeeded, {result['boards_failed']} failed; {result['postings_fetched']} postings fetched, {result['jobs_found']} HSE vacancies accepted; {result['jobs_new']} new, {result['jobs_updated']} updated. See Search History for diagnostics."
     }
 
 # 9. Search History

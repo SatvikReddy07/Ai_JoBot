@@ -270,3 +270,31 @@ def test_industry_credit_requires_candidate_industry_evidence():
     high=evaluate(related,description='Lead EHS in chemical manufacturing plants.')
     assert low.score_breakdown['industry']==0
     assert high.score_breakdown['industry']>0
+
+
+def test_partial_discovery_reports_feed_failures_and_filtered_counts(db_session, context):
+    _, board, job = context
+    other = EmployerBoard(company_name='Unavailable Employer', platform='lever', board_token='unavailable', is_enabled=True)
+    db_session.add(other)
+    db_session.commit()
+
+    async def valid(_):
+        return [raw(job), raw(job, source_job_id='software-1', url='https://boards.greenhouse.io/synthetic/jobs/software-1', title='Software Engineer', description='Build software')]
+
+    async def missing(_):
+        raise ValueError('404 Not Found')
+
+    with patch('backend.services.discovery.GreenhouseConnector.fetch_jobs', valid), patch('backend.services.discovery.LeverConnector.fetch_jobs', missing):
+        response = client.post('/api/search/run')
+    assert response.status_code == 200
+    data = response.json()
+    assert data['status'] == 'partial'
+    assert data['boards_succeeded'] == 1 and data['boards_failed'] == 1
+    assert data['postings_fetched'] == 2 and data['jobs_found'] == 1
+    assert '404 Not Found' in data['errors'][0]
+    assert '1 failed' in data['message']
+    history = client.get('/api/search/history').json()[0]
+    assert history['status'] == 'partial'
+    assert '2 postings fetched; 1 HSE vacancies accepted' in history['error_message']
+    db_session.refresh(job)
+    assert job.is_active and job.is_saved

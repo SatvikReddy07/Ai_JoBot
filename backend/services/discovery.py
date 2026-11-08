@@ -134,6 +134,7 @@ async def run_discovery_service(db: Session, board_id: Optional[int] = None) -> 
     db.add(history_entry); db.commit(); db.refresh(history_entry)
     total_found = total_new = total_updated = total_inactive = successful_boards = 0
     errors = []
+    total_fetched = 0
     for board in boards:
         platform = board.platform.lower()
         cls = {"greenhouse": GreenhouseConnector, "lever": LeverConnector}.get(platform)
@@ -188,6 +189,7 @@ async def run_discovery_service(db: Session, board_id: Optional[int] = None) -> 
                 board.last_job_count = len(raw_jobs)
             db.commit()
             successful_boards += 1
+            total_fetched += len(raw_jobs)
             total_found += found; total_new += new; total_updated += updated; total_inactive += inactive
             # Notifications cannot partially commit the source refresh transaction.
             for job in notifications:
@@ -202,9 +204,11 @@ async def run_discovery_service(db: Session, board_id: Optional[int] = None) -> 
             board.last_status = f"error: {str(exc)[:50]}"
             db.commit()
     history_entry.completed_at = datetime.utcnow()
-    history_entry.status = "success" if successful_boards else "failed"
+    history_entry.status = "partial" if successful_boards and errors else ("success" if successful_boards else "failed")
     history_entry.jobs_found = total_found; history_entry.jobs_new = total_new; history_entry.jobs_updated = total_updated
-    history_entry.error_message = "; ".join(errors) or None
+    summary = f"{successful_boards}/{len(boards)} feeds succeeded; {total_fetched} postings fetched; {total_found} HSE vacancies accepted."
+    history_entry.error_message = summary + ((" Errors: " + "; ".join(errors)) if errors else "")
     db.commit()
     return dict(status=history_entry.status, boards_searched=len(boards), jobs_found=total_found,
-                jobs_new=total_new, jobs_updated=total_updated, jobs_inactivated=total_inactive, errors=errors)
+                jobs_new=total_new, jobs_updated=total_updated, jobs_inactivated=total_inactive, errors=errors, boards_succeeded=successful_boards,
+                boards_failed=len(boards)-successful_boards, postings_fetched=total_fetched)

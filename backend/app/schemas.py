@@ -239,6 +239,10 @@ class SettingsUpdate(BaseModel):
 
 # ---- SEARCH RUN & HISTORY ----
 class SearchRunResponse(BaseModel):
+    boards_succeeded: int
+    boards_failed: int
+    postings_fetched: int
+    errors: List[str]
     status: str
     boards_searched: int
     jobs_found: int
