@@ -22,7 +22,7 @@ if __name__ == '__main__':
             try: check.bind(('127.0.0.1',port))
             except OSError: raise SystemExit(f'Stop your local application first. Port {port} is occupied.')
     with tempfile.TemporaryDirectory(prefix='hse_ui_demo_') as directory:
-        env=dict(os.environ,HSE_DATA_DIR=directory,NEXT_TELEMETRY_DISABLED='1')
+        env=dict(os.environ,HSE_DATA_DIR=directory,NEXT_TELEMETRY_DISABLED='1',HSE_DEMO_PAGINATION_ROWS='121')
         env.pop('GEMINI_API_KEY',None)
         with open(Path(directory)/'services.log','w') as log:
             subprocess.run([sys.executable,str(root/'scripts/seed_phase4_demo.py')],cwd=root,env=env,check=True,stdout=log,stderr=log)

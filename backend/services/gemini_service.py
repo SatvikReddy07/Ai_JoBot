@@ -37,12 +37,32 @@ def compute_job_hash(title: str, location: str, description: str) -> str:
     raw = f"{title.strip().lower()}::{location.strip().lower()}::{description.strip()}"
     return hashlib.sha256(raw.encode("utf-8")).hexdigest()
 
-def get_daily_ai_usage(db: Session, daily_limit: int = DEFAULT_DAILY_LIMIT) -> Dict[str, Any]:
+def assessment_cache_key(db, job, profile, selected_model=None):
+    """No schema change: existing job_hash now signs all assessment inputs."""
+    from .matching_context import POLICY_VERSION, match_options
+    options = match_options(profile, db)
+    vacancy = {name: getattr(job, name) for name in ("title", "company", "location", "city", "country",
+        "description", "employment_type", "is_permanent_fulltime", "url", "is_active")}
+    content = dict(policy=POLICY_VERSION, vacancy=vacancy, context=options,
+        model=selected_model or os.getenv("GEMINI_MODEL", DEFAULT_GEMINI_MODEL),
+        api_configured=bool(os.getenv("GEMINI_API_KEY", "").strip()), day=date.today().isoformat())
+    return hashlib.sha256(json.dumps(content, sort_keys=True, default=str).encode()).hexdigest()
+
+
+def cached_assessment_is_current(db, job):
+    profile = db.query(UserProfile).first()
+    return bool(profile and job.ai_assessment and
+                job.ai_assessment.job_hash == assessment_cache_key(db, job, profile))
+
+
+def get_daily_ai_usage(db: Session, daily_limit: Optional[int] = None) -> Dict[str, Any]:
     """Retrieve daily request counts and quota utilization."""
+    if daily_limit is None:
+        daily_limit = max(0, int(os.getenv("AI_DAILY_LIMIT", str(DEFAULT_DAILY_LIMIT))))
     today_str = date.today().isoformat()
     count = db.query(AIUsageLog).filter(
         AIUsageLog.daily_date == today_str,
-        AIUsageLog.status.in_(["success", "rate_limited"])
+        AIUsageLog.status.in_(["success", "failed", "rate_limited"])
     ).count()
 
     cached_count = db.query(AIUsageLog).filter(
@@ -102,15 +122,8 @@ def generate_fallback_assessment(job: Job, profile: UserProfile, reason_msg: str
     Explicitly labeled as rules_fallback.
     """
     matcher = HSEJobMatcher()
-    result = matcher.evaluate(
-        title=job.title,
-        location=job.location,
-        country=job.country,
-        city=job.city,
-        employment_type=job.employment_type,
-        is_permanent_fulltime=job.is_permanent_fulltime,
-        description=job.description
-    )
+    from .matching_context import evaluate_job
+    result = evaluate_job(job, profile)
 
     growth_score, growth_summary = compute_career_growth_score(job, profile)
 
@@ -143,7 +156,7 @@ def generate_fallback_assessment(job: Job, profile: UserProfile, reason_msg: str
         "missing_requirements": result.missing_requirements,
         "qualification_alignment": result.matching_qualifications,
         "experience_alignment": result.matching_experience,
-        "industry_alignment": ["Manufacturing & industrial operational governance match"],
+        "industry_alignment": ["Industry scope requires comparison with confirmed employment history"],
         "visa_relocation_considerations": (
             f"Location: {job.country or 'Unknown'}. Status: {result.sponsorship_status}. "
             "Note: Evaluated strictly from explicit job advertisement text without unverified assumptions."
@@ -175,15 +188,26 @@ async def analyze_job_with_ai(
     4. Calls Gemini SDK with structured schema.
     5. Falls back safely if API is unavailable, unconfigured, or rate limited.
     """
-    job_hash = compute_job_hash(job.title, job.location, job.description)
-    selected_model = model_name or DEFAULT_GEMINI_MODEL
+    selected_model = model_name or os.getenv("GEMINI_MODEL", DEFAULT_GEMINI_MODEL)
+    job_hash = assessment_cache_key(db, job, profile, selected_model)
     api_key = os.getenv("GEMINI_API_KEY", "").strip()
     today_str = date.today().isoformat()
+
+    # Local occupational gating cannot be overridden by an AI response.
+    matcher = HSEJobMatcher()
+    _, relevant, _ = matcher.classify_occupational_relevance(job.title, job.description or "")
+    excluded, _ = matcher.is_excluded(job.title, job.description or "", job.employment_type or "")
+    if not relevant or excluded or not job.is_active:
+        data = generate_fallback_assessment(job, profile, "Excluded or inactive vacancy; no AI request sent.")
+        data["application_priority"] = "Low"
+        if excluded or not job.is_active: data["match_score"] = min(data["match_score"], 15)
+        return _upsert_assessment(db, job.id, job_hash, data)
 
     # 1. Check existing cached assessment
     existing_assessment = db.query(AIJobAssessment).filter(AIJobAssessment.job_id == job.id).first()
     if existing_assessment and not force_reanalyze:
-        if existing_assessment.job_hash == job_hash:
+        retryable_fallback = existing_assessment.engine_used != "ai" and profile.consent_given_for_ai and bool(api_key)
+        if existing_assessment.job_hash == job_hash and not retryable_fallback:
             logger.info(f"Returning cached assessment for Job #{job.id} ({job.title}).")
             # Log cache hit
             log_entry = AIUsageLog(
@@ -224,7 +248,7 @@ async def analyze_job_with_ai(
             timestamp=datetime.utcnow(),
             job_id=job.id,
             model=selected_model,
-            status="rate_limited",
+            status="quota_skipped",
             daily_date=today_str
         )
         db.add(log_entry)
@@ -249,11 +273,12 @@ You are an expert executive career advisor evaluating Health, Safety, and Enviro
 CANDIDATE VERIFIED PROFILE:
 Name: {profile.name}
 Current Role: {profile.current_role} at {profile.current_company}
-Experience: {profile.experience_years}+ years of multinational HSE leadership
+Total industrial experience: {profile.experience_years} years; distinguish operations/maintenance from HSE leadership using employment history.
+Employment history: {profile.employment_history}
 Academic Qualifications: {profile.qualifications}
 Core Technical Competencies: {profile.skills}
 Key Certifications: {profile.certifications}
-Verified Track Record: {profile.achievements} (including APAC HSE governance across 19 plants)
+Candidate-provided track record: {profile.achievements}
 Target Geographies: {profile.target_countries}
 
 VACANCY TO ANALYZE:
@@ -267,7 +292,7 @@ Job Description:
 \"\"\"
 
 EVALUATION DIRECTIVES:
-1. Objectively compare the vacancy requirements with Raghunath Reddy's verified 18+ years profile.
+1. Compare the vacancy with only the supplied candidate facts. Never invent degrees, certifications, scope, dates or metrics.
 2. Calculate an honest suitability Match Score (0-100). Do NOT treat this as employer hiring probability.
 3. Calculate Career Growth Score (0-100) reflecting leadership scope, multinational exposure, and career progression.
 4. Distinguish explicit visa sponsorship statements in the job description ('Confirmed', 'Possible', 'Not Supported', or 'Unknown'). Never assume sponsorship merely because the company is multinational.

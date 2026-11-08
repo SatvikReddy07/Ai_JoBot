@@ -18,18 +18,19 @@ export interface Job {
   last_verified_at: string;
   is_active: boolean;
   match_score: number;
-  match_level: "Excellent Match" | "Strong Match" | "Potential Match" | "Low Match";
+  match_level: "Excellent Match" | "Strong Match" | "Good Match" | "Potential Match" | "Review Manually" | "Low Match" | "Low Match (Excluded - Unrelated)";
   match_reasons: string[];
   matching_qualifications: string[];
   matching_experience: string[];
   matching_skills: string[];
   missing_requirements: string[];
   location_suitability?: string;
-  sponsorship_status: "Confirmed" | "Not Supported" | "Unknown";
-  application_status: "Discovered" | "Saved" | "Interested" | "Ready to Apply" | "Applied" | "Interview" | "Offer" | "Rejected" | "Closed";
+  sponsorship_status: "Confirmed" | "Not Supported" | "Unknown" | "Not Evaluated";
+  application_status: "Discovered" | "Saved" | "Interested" | "Ready to Apply" | "Applied" | "Interview" | "Offer" | "Rejected" | "Closed" | "Shortlisted" | "Documents Prepared" | "Ready For Review" | "In Progress" | "Submitted" | "Follow Up Due" | "Interview Scheduled" | "Offer Received" | "Withdrawn";
   application_notes?: string;
   is_saved: boolean;
   ai_assessment?: AIJobAssessment;
+  managed_application?: boolean;
 }
 
 export interface MasterCV {

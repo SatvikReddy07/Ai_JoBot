@@ -50,7 +50,7 @@ export const JobList: React.FC<JobListProps> = ({
     "All", "India", "Singapore", "Germany", "Netherlands", "Ireland", "Australia", "United Kingdom", "Switzerland", "Unknown"
   ];
 
-  const matchLevels = ["All", "Excellent Match", "Strong Match", "Potential Match", "Low Match"];
+  const matchLevels = ["All", "Excellent Match", "Strong Match", "Good Match", "Potential Match", "Review Manually", "Low Match", "Low Match (Excluded - Unrelated)"];
   const aiPriorities = ["All", "High", "Medium", "Low"];
   const employmentTypes = ["All", "Permanent Full-time", "Full-time", "Unknown"];
   const sponsorshipOptions = ["All", "Confirmed", "Not Supported", "Unknown"];

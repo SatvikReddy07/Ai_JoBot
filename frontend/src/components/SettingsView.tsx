@@ -84,7 +84,7 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
             Candidate Profile &amp; Rules-Based Matching Configuration
           </h3>
           <p className="text-xs text-slate-400">
-            Tune scoring weights, target countries, and Windows Task Scheduler preferences.
+            Tune matching preferences. Occupational relevance remains an independent gate; the weights distribute the remaining 75 fit points. Existing scores update when saved.
           </p>
         </div>
         <div className="flex items-center space-x-2">

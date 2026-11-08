@@ -2,7 +2,7 @@ import logging
 from typing import List
 from datetime import datetime
 import httpx
-from .base import BaseConnector, RawJob, clean_html, parse_location, parse_employment_type
+from .base import BaseConnector, RawJob, clean_html, parse_location, parse_employment_type, validate_feed_items
 
 logger = logging.getLogger(__name__)
 
@@ -27,14 +27,15 @@ class GreenhouseConnector(BaseConnector):
             async with httpx.AsyncClient(timeout=20.0, follow_redirects=True) as client:
                 response = await client.get(url, headers=headers)
                 
-                if response.status_code == 404:
-                    logger.warning(f"Greenhouse board '{self.board_token}' not found (404).")
-                    return []
-                
                 response.raise_for_status()
                 data = response.json()
                 
-                jobs_list = data.get("jobs", [])
+                if not isinstance(data, dict) or "jobs" not in data:
+                    raise ValueError("Greenhouse response is not a complete jobs snapshot.")
+                jobs_list = validate_feed_items(data["jobs"], "title", "absolute_url")
+                total = (data.get("meta") or {}).get("total")
+                if total is not None and total != len(jobs_list):
+                    raise ValueError("Incomplete Greenhouse snapshot; stored vacancies preserved.")
                 for item in jobs_list:
                     job_id = str(item.get("id"))
                     title = item.get("title", "").strip()

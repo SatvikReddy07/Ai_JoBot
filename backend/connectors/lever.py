@@ -2,7 +2,7 @@ import logging
 from typing import List
 from datetime import datetime, timezone
 import httpx
-from .base import BaseConnector, RawJob, clean_html, parse_location, parse_employment_type
+from .base import BaseConnector, RawJob, clean_html, parse_location, parse_employment_type, validate_feed_items
 
 logger = logging.getLogger(__name__)
 
@@ -27,16 +27,14 @@ class LeverConnector(BaseConnector):
             async with httpx.AsyncClient(timeout=20.0, follow_redirects=True) as client:
                 response = await client.get(url, headers=headers)
                 
-                if response.status_code == 404:
-                    logger.warning(f"Lever board '{self.board_token}' not found (404).")
-                    return []
-                
                 response.raise_for_status()
                 postings = response.json()
 
-                if not isinstance(postings, list):
-                    logger.warning(f"Unexpected response format from Lever board '{self.board_token}'.")
-                    return []
+                # Either official hostedUrl or applyUrl is accepted, but malformed
+                # responses must never become an apparently empty snapshot.
+                if isinstance(postings, list):
+                    postings = [{**item, "hostedUrl": item.get("hostedUrl") or item.get("applyUrl")} if isinstance(item, dict) else item for item in postings]
+                postings = validate_feed_items(postings, "text", "hostedUrl")
 
                 for item in postings:
                     job_id = str(item.get("id"))

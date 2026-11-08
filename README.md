@@ -47,8 +47,8 @@ Both startup commands bind to loopback. Setup installs dependencies and builds t
 ## Application Control Center
 
 1. Review **My Career Profile**. Correct old records explicitly, especially the L&T maintenance/operations period ending November 2016. Uploading a CV extracts its text and preserves confirmed profile fields; extraction does not verify credentials.
-2. Open **Application Control Center**. Filter the suitable jobs queue by country, employer, minimum score, eligibility, sponsorship, stage and update date. Ranking uses the current occupational matcher rather than trusting old stored scores.
-3. Review requirement evidence and unknowns. Provide source-backed user confirmation where appropriate. Unknown work authorization or sponsorship never becomes confirmed automatically. Confirmed mandatory gaps exclude preparation.
+2. Open **Application Control Center**. Filter the suitable jobs queue by country, employer, minimum score, eligibility, sponsorship, stage and update date. Ranking uses the current profile-based occupational matcher. Derived scores refresh at startup and after profile/preferences edits. The occupational gate is independent; configured weights distribute the other 75 fit points.
+3. Review requirement evidence and unknowns. Provide source-backed user confirmation where appropriate. Unknown work authorization or sponsorship never becomes confirmed automatically. Relocation assistance alone is not sponsorship evidence. Confirmed mandatory gaps exclude preparation.
 4. Shortlist a vacancy. Use **Application Studio** to generate, edit, download and approve the CV/cover-letter package. Old packages remain preserved and must be reviewed for factual accuracy.
 5. Return to the Control Center, select the approved package and exact document versions, verify the employer URL, and review the candidate facts.
 6. Enter verified contact fields and the employer's application questions. Unknown answers stay blank. Every mandatory answer must be reviewed before approval.
@@ -130,3 +130,11 @@ frontend/
   src/lib/             Existing typed API client
 scripts/               Setup/startup, browser helper, reminders, mock portal
 ```
+
+## Phase 4 reliability update
+
+See [STABILIZATION_REPORT.md](STABILIZATION_REPORT.md) for the current handover comparison and measured results (125 backend tests, browser/launcher integrations and frontend checks). AI assessments now expire after profile/model/preferences/consent/policy changes and daily refresh; old assessments are preserved but hidden until recalculated. Failed provider attempts count toward the configured cap.
+
+Complete successful native ATS snapshots can mark missing jobs inactive without deleting them; failures, malformed snapshots, custom URLs and ambiguous ownership never cause guessed closures. Saved jobs and the tracker retain inactive history. The legacy tracker fetches all pages and displays Phase 4-managed applications; change their stages in the Control Center.
+
+No new dependency or schema migration is needed for this update. Pull the feature branch, restart the backend and rebuild the frontend if using `npm start`/the production launcher. Review and reapprove existing prepared applications after the matching-policy change. Native Mac notifications and real employer forms remain subject to the limits above.

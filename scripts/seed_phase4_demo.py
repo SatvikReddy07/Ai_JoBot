@@ -20,3 +20,14 @@ with SessionLocal() as db:
  j=Job(source='lever',source_job_id='unrelated-demo',company='Synthetic Software',title='Senior Software Engineering Manager',description='Build software APIs',location='India',country='India',url='https://synthetic-employer.example.invalid/software',employment_type='Full-time',is_permanent_fulltime=True,match_score=99,is_active=True)
  db.add(j);db.commit()
  print('Seeded synthetic-only demo data')
+
+# Optional isolated fixture exercises pagination beyond the API's 100-row cap.
+rows=int(os.environ.get("HSE_DEMO_PAGINATION_ROWS", "0"))
+if rows:
+ with SessionLocal() as db:
+  for n in range(rows):
+   db.add(Job(source="synthetic_fixture",source_job_id=f"tracker-{n}",company="Synthetic Pagination Fixture",
+       title=f"Synthetic tracker role {n}",description="Synthetic historical record, not a vacancy.",location="India",country="India",
+       url=f"https://synthetic-employer.example.invalid/history/{n}",employment_type="Unknown",is_permanent_fulltime=False,
+       is_active=n%2==0,is_saved=True,application_status="Saved",match_score=0))
+  db.commit()

@@ -28,6 +28,7 @@ import {
 import {
   getDashboardStats,
   getJobs,
+  getAllJobs,
   getJobById,
   toggleSaveJob,
   updateJobStatus,
@@ -118,8 +119,8 @@ export default function Home() {
   // Load Tracker Jobs
   const loadTrackerJobs = useCallback(async () => {
     try {
-      const res = await getJobs({ page_size: 100, page: 1 });
-      setAllJobsForTracker(res.items);
+      const jobs = await getAllJobs({ include_inactive: true });
+      setAllJobsForTracker(jobs);
     } catch (err) {
       console.error("Error loading tracker jobs:", err);
     }
@@ -137,7 +138,7 @@ export default function Home() {
     } else if (currentTab === "high_matches") {
       loadJobs({ min_score: 75, is_saved: undefined });
     } else if (currentTab === "saved") {
-      loadJobs({ is_saved: true, min_score: undefined });
+      loadJobs({ is_saved: true, min_score: undefined, include_inactive: true });
     } else if (currentTab === "tracker") {
       loadTrackerJobs();
     }

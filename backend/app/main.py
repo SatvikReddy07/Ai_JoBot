@@ -36,7 +36,7 @@ from ..services.discovery import run_discovery_service, init_default_boards, ini
 from ..services.export import generate_jobs_csv
 from ..services.cv_parser import extract_text_from_file, parse_cv_content
 from ..services.gemini_service import (
-    analyze_job_with_ai, get_daily_ai_usage, DEFAULT_GEMINI_MODEL, DEFAULT_DAILY_LIMIT
+    analyze_job_with_ai, get_daily_ai_usage, DEFAULT_GEMINI_MODEL, DEFAULT_DAILY_LIMIT, cached_assessment_is_current
 )
 from ..services.ats_service import analyze_ats_keywords
 from ..services.tailoring_service import generate_tailored_cv, generate_tailored_cover_letter
@@ -62,7 +62,7 @@ initialize_schema()
 app = FastAPI(
     title="HSE Career Agent API",
     description="Backend API for personal HSE leadership career discovery, AI matching, and tracking",
-    version="2.0.0"
+    version="4.1.0"
 )
 
 # Reject DNS rebinding and unsafe cross-origin requests, including same-site port attacks.
@@ -190,7 +190,9 @@ def format_user_profile_response(profile: UserProfile) -> dict:
 def format_job_response(j: Job) -> dict:
     """Format SQLAlchemy Job model into dict matching JobResponse."""
     ai_data = None
-    if j.ai_assessment:
+    from sqlalchemy.orm import object_session
+    db = object_session(j)
+    if j.ai_assessment and db is not None and cached_assessment_is_current(db, j):
         ai_data = {
             "id": j.ai_assessment.id,
             "job_id": j.ai_assessment.job_id,
@@ -244,7 +246,8 @@ def format_job_response(j: Job) -> dict:
         "application_status": j.application_status,
         "application_notes": j.application_notes,
         "is_saved": j.is_saved,
-        "ai_assessment": ai_data
+        "ai_assessment": ai_data,
+        "managed_application": bool(j.applications)
     }
 
 @app.on_event("startup")
@@ -253,6 +256,9 @@ def startup_event():
         init_default_boards(db)
         init_search_preferences(db)
         get_or_create_user_profile(db)
+        from ..services.matching_context import refresh_job_scores
+        refresh_job_scores(db)
+        db.commit()
 
 # 1. Health
 @app.get("/health")
@@ -260,7 +266,7 @@ def health_check():
     return {
         "status": "ok",
         "app": "HSE Career Agent",
-        "version": "4.0.0",
+        "version": "4.1.0",
         "phase": 4,
         "timestamp": datetime.utcnow().isoformat()
     }
@@ -272,11 +278,11 @@ def get_dashboard_stats(db: Session = Depends(get_db)):
 
     total_jobs = db.query(Job).count()
     new_jobs_today = db.query(Job).filter(Job.discovered_at >= today_start).count()
-    excellent_matches = db.query(Job).filter(Job.match_score >= 85).count()
-    strong_matches = db.query(Job).filter(Job.match_score >= 75, Job.match_score < 85).count()
+    excellent_matches = db.query(Job).filter(Job.is_active.is_(True), Job.match_score >= 85).count()
+    strong_matches = db.query(Job).filter(Job.is_active.is_(True), Job.match_score >= 75, Job.match_score < 85).count()
     saved_opportunities = db.query(Job).filter(Job.is_saved == True).count()
     active_applications = db.query(Job).filter(
-        Job.application_status.in_(["Interested", "Ready to Apply", "Applied", "Interview", "Offer"])
+        Job.application_status.in_(["Interested", "Ready to Apply", "Applied", "Interview", "Offer", "Shortlisted", "Documents Prepared", "Ready For Review", "In Progress", "Submitted", "Follow Up Due", "Interview Scheduled", "Offer Received"])
     ).count()
 
     ai_analyzed_count = db.query(AIJobAssessment).count()
@@ -343,11 +349,14 @@ def get_jobs(
     is_saved: Optional[bool] = None,
     ai_priority: Optional[str] = None,
     sort_by: str = "score_desc",
+    include_inactive: bool = False,
     page: int = Query(1, ge=1),
     page_size: int = Query(20, ge=1, le=100),
     db: Session = Depends(get_db)
 ):
     query = db.query(Job)
+    if not include_inactive:
+        query = query.filter(Job.is_active.is_(True))
 
     if q:
         search_filter = f"%{q}%"
@@ -405,6 +414,7 @@ def get_jobs(
     else:
         query = query.order_by(desc(Job.match_score))
 
+    query = query.order_by(Job.id.asc())
     total = query.count()
     total_pages = (total + page_size - 1) // page_size if total > 0 else 1
 
@@ -554,6 +564,9 @@ def update_settings(payload: SettingsUpdate, db: Session = Depends(get_db)):
         os.environ["AI_DAILY_LIMIT"] = str(payload.ai_daily_limit)
 
     pref.updated_at = datetime.utcnow()
+    if payload.scoring_weights is not None or payload.target_countries is not None:
+        from ..services.matching_context import refresh_job_scores
+        refresh_job_scores(db)
     db.commit()
     db.refresh(pref)
 
@@ -775,12 +788,15 @@ def update_user_profile(payload: UserProfileUpdate, db: Session = Depends(get_db
         profile.achievements = json.dumps(payload.achievements)
     if payload.target_countries is not None:
         profile.target_countries = json.dumps(payload.target_countries)
+        init_search_preferences(db).target_countries = profile.target_countries
     if payload.target_titles is not None:
         profile.target_titles = json.dumps(payload.target_titles)
     if payload.consent_given_for_ai is not None:
         profile.consent_given_for_ai = payload.consent_given_for_ai
 
     profile.last_updated_at = datetime.utcnow()
+    from ..services.matching_context import refresh_job_scores
+    refresh_job_scores(db)
     db.commit()
     db.refresh(profile)
 
@@ -865,7 +881,7 @@ async def ai_analyze_job(
 @app.get("/api/jobs/{job_id}/ai-assessment", response_model=AIJobAssessmentResponse)
 def get_job_ai_assessment(job_id: int, db: Session = Depends(get_db)):
     assessment = db.query(AIJobAssessment).filter(AIJobAssessment.job_id == job_id).first()
-    if not assessment:
+    if not assessment or not cached_assessment_is_current(db, db.get(Job, job_id)):
         raise HTTPException(status_code=404, detail="No AI assessment found for this job.")
 
     return {

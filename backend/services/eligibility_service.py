@@ -7,9 +7,8 @@ from .matcher import HSEJobMatcher, OccupationalCategory
 
 def assess_eligibility(job, profile):
     matcher = HSEJobMatcher()
-    result = matcher.evaluate(title=job.title, location=job.location, country=job.country or "",
-        city=job.city or "", employment_type=job.employment_type or "Unknown",
-        is_permanent_fulltime=bool(job.is_permanent_fulltime), description=job.description or "")
+    from .matching_context import evaluate_job
+    result = evaluate_job(job, profile)
     checks = []
     def add(category, status, detail, mandatory=False):
         checks.append(dict(category=category, status=status, detail=detail, is_mandatory=mandatory))

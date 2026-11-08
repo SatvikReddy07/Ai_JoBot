@@ -48,6 +48,9 @@ with sync_playwright() as p:
  page.get_by_role('button',name='Draft message',exact=True).click()
  expect(page.get_by_label('Message body',exact=True)).to_contain_text('Synthetic Candidate')
  page.get_by_role('button',name='Close',exact=True).click()
+ page.get_by_role('button',name='Application Tracker',exact=True).click()
+ expect(page.get_by_text('Synthetic tracker role 120',exact=True)).to_be_visible()
+ expect(page.get_by_text('Submitted',exact=True)).to_be_visible()
  assert not errors,errors
- print(json.dumps({'ui_workflow':'passed','unrelated_role_excluded':True,'approval_workflow':'passed','mock_portal':'passed','manual_submission_record':'passed','outreach_draft':'passed','javascript_errors':errors}))
+ print(json.dumps({'ui_workflow':'passed','unrelated_role_excluded':True,'approval_workflow':'passed','mock_portal':'passed','manual_submission_record':'passed','outreach_draft':'passed','tracker_pagination':'passed','phase4_tracker_stage':'passed','javascript_errors':errors}))
  browser.close()

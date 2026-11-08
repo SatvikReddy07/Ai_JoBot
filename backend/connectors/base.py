@@ -132,3 +132,19 @@ class BaseConnector(ABC):
     async def fetch_jobs(self) -> List[RawJob]:
         """Fetch live jobs from employer career feed."""
         pass
+
+
+def validate_feed_items(items, title_field, url_field):
+    """Reject malformed/truncated snapshots rather than interpreting them as closures."""
+    from urllib.parse import urlsplit
+    if not isinstance(items, list):
+        raise ValueError("Job feed must contain a complete list of postings.")
+    for item in items:
+        if not isinstance(item, dict) or item.get("id") is None:
+            raise ValueError("Job feed contains a posting without a stable ID.")
+        if not str(item["id"]).strip() or not isinstance(item.get(title_field), str) or not item[title_field].strip():
+            raise ValueError("Job feed contains an invalid ID or title.")
+        url = item.get(url_field)
+        if not isinstance(url, str) or urlsplit(url).scheme not in {"http", "https"} or not urlsplit(url).hostname:
+            raise ValueError("Job feed contains a posting without a valid source URL.")
+    return items

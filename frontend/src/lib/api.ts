@@ -40,6 +40,7 @@ export interface JobFilterParams {
   sponsorship_status?: string;
   application_status?: string;
   is_saved?: boolean;
+  include_inactive?: boolean;
   sort_by?: string;
   page?: number;
   page_size?: number;
@@ -55,6 +56,19 @@ export async function getJobs(params: JobFilterParams = {}): Promise<JobListResp
 
   const res = await fetch(`${API_BASE_URL}/api/jobs?${searchParams.toString()}`, { cache: "no-store" });
   return handleResponse<JobListResponse>(res);
+}
+
+export async function getAllJobs(params: JobFilterParams = {}): Promise<Job[]> {
+  const jobs = new Map<number, Job>();
+  let page = 1;
+  let pages = 1;
+  do {
+    const response = await getJobs({ ...params, page_size: 100, page });
+    for (const job of response.items) jobs.set(job.id, job);
+    pages = response.total_pages;
+    page += 1;
+  } while (page <= pages);
+  return Array.from(jobs.values());
 }
 
 export async function getJobById(id: number): Promise<Job> {

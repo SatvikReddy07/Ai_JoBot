@@ -1,6 +1,6 @@
 from typing import List, Optional, Any, Dict
 from datetime import datetime
-from pydantic import BaseModel, Field, ConfigDict
+from pydantic import BaseModel, Field, ConfigDict, model_validator
 
 # ---- PHASE 2 SCHEMAS ----
 class MasterCVResponse(BaseModel):
@@ -151,6 +151,7 @@ class JobResponse(BaseModel):
     application_notes: Optional[str] = None
     is_saved: bool
     ai_assessment: Optional[AIJobAssessmentResponse] = None
+    managed_application: bool = False
 
     model_config = ConfigDict(from_attributes=True)
 
@@ -195,12 +196,18 @@ class EmployerBoardResponse(EmployerBoardBase):
 
 # ---- SEARCH PREFERENCE & SETTINGS ----
 class ScoringWeights(BaseModel):
-    experience_seniority: int = 25
-    hse_technical_skills: int = 25
-    qualifications: int = 15
-    industry_relevance: int = 15
-    location_international: int = 15
-    employment_preferences: int = 5
+    experience_seniority: int = Field(default=25, ge=0, le=100)
+    hse_technical_skills: int = Field(default=25, ge=0, le=100)
+    qualifications: int = Field(default=15, ge=0, le=100)
+    industry_relevance: int = Field(default=15, ge=0, le=100)
+    location_international: int = Field(default=15, ge=0, le=100)
+    employment_preferences: int = Field(default=5, ge=0, le=100)
+
+    @model_validator(mode="after")
+    def total_is_100(self):
+        if sum(self.model_dump().values()) != 100:
+            raise ValueError("Scoring weights must total 100.")
+        return self
 
 class SettingsResponse(BaseModel):
     profile_name: str
@@ -228,7 +235,7 @@ class SettingsUpdate(BaseModel):
     auto_search_hour: Optional[int] = None
     auto_search_minute: Optional[int] = None
     gemini_model: Optional[str] = None
-    ai_daily_limit: Optional[int] = None
+    ai_daily_limit: Optional[int] = Field(default=None, ge=0)
 
 # ---- SEARCH RUN & HISTORY ----
 class SearchRunResponse(BaseModel):

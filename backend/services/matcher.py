@@ -1,4 +1,5 @@
 import re
+import json
 from typing import Dict, List, Any, Optional, Tuple
 
 class OccupationalCategory:
@@ -131,11 +132,12 @@ class HSEJobMatcher:
 
     # Visa & Sponsorship Detection
     SPONSORSHIP_POSITIVE = [
-        r"\bvisa sponsorship available\b", r"\bwill sponsor\b", r"\brelocation assistance provided\b",
-        r"\brelocation package\b", r"\bglobal applicants welcome\b", r"\bassistance with visa\b"
+        r"\bvisa sponsorship (?:is )?(?:available|provided|offered)\b",
+        r"\bwill sponsor (?:your |a |the )?(?:work |employment )?visa\b"
     ]
     SPONSORSHIP_NEGATIVE = [
-        r"\bno visa sponsorship\b", r"\bmust have right to work\b", r"\bno relocation\b",
+        r"\bno (?:visa |work visa )?sponsorship\b", r"\bmust have right to work\b",
+        r"\bsponsorship is not available\b", r"\bdo not (?:offer|provide) (?:work )?visa sponsorship\b",
         r"\bapplicants must be legally authorized\b", r"\bcitizens or permanent residents only\b"
     ]
 
@@ -143,7 +145,7 @@ class HSEJobMatcher:
         """Check if job should be excluded as non-leadership, junior, or freelance."""
         full_text = f"{title} {description[:500]} {employment_type}".lower()
 
-        if "freelance" in full_text or "intern" in full_text:
+        if re.search(r"\b(freelance|intern|internship)\b", f"{title} {employment_type}".lower()):
             return True, "Excluded: Freelance/Internship"
         if "contract" in employment_type.lower() and not ("leadership" in full_text or "manager" in full_text):
             return True, "Excluded: Temporary/Contract non-leadership"
@@ -263,7 +265,9 @@ class HSEJobMatcher:
         employment_type: str,
         is_permanent_fulltime: bool,
         description: str,
-        weights: Optional[Dict[str, int]] = None
+        weights: Optional[Dict[str, int]] = None,
+        profile: Optional[Dict[str, Any]] = None,
+        target_countries: Optional[List[str]] = None
     ) -> MatchResult:
         """
         Compute full 100-point explainable match breakdown across 6 documented dimensions:
@@ -279,6 +283,10 @@ class HSEJobMatcher:
         full_lower = f"{title_lower}\n{desc_lower}"
 
         reasons: List[str] = []
+        if profile is None:
+            reasons.append("Candidate profile not supplied: this score measures vacancy relevance; no candidate credentials are verified.")
+        if weights is not None:
+            reasons.append("Component points below describe raw evidence before weighting; the final weighted breakdown determines the total.")
         matching_qualifications: List[str] = []
         matching_experience: List[str] = []
         matching_skills: List[str] = []
@@ -331,11 +339,11 @@ class HSEJobMatcher:
         is_global_regional = any(k in title_lower for k in self.GLOBAL_REGIONAL_TITLES)
         if is_global_regional and any(t in title_lower for t in ["manager", "head", "director", "lead", "vp"]):
             sen_score = 20
-            matching_experience.append("Executive/Global/Regional HSE Leadership role directly aligns with your 18+ years APAC leadership record")
-            reasons.append(f"Seniority Alignment (+{sen_score}/20 pts): Global/Regional Executive scope directly matching 18+ years.")
+            matching_experience.append("Vacancy includes executive/global/regional HSE leadership; compare its scope with confirmed employment history")
+            reasons.append(f"Seniority Alignment (+{sen_score}/20 pts): Global/regional executive scope; employment history needs review.")
         elif "senior" in title_lower and any(t in title_lower for t in ["manager", "lead", "director"]):
             sen_score = 17
-            matching_experience.append("Senior HSE Manager / Lead role matching your extensive multi-site management background")
+            matching_experience.append("Vacancy includes senior HSE management responsibilities")
             reasons.append(f"Seniority Alignment (+{sen_score}/20 pts): Senior HSE Management level.")
         elif any(t in title_lower for t in ["manager", "lead", "head", "director"]):
             sen_score = 14
@@ -343,8 +351,19 @@ class HSEJobMatcher:
             reasons.append(f"Seniority Alignment (+{sen_score}/20 pts): HSE Management tier.")
         else:
             sen_score = 10
-            matching_experience.append("HSE technical specialist role alignable with candidate scope")
+            matching_experience.append("Vacancy includes functional HSE responsibilities; candidate scope needs review")
             reasons.append(f"Seniority Alignment (+{sen_score}/20 pts): Functional safety position.")
+        if profile is not None:
+            roles = " ".join([profile.get("current_role") or ""] + [r.get("role", "") for r in profile.get("employment_history", []) if isinstance(r, dict)]).lower()
+            leadership = any(re.search(p, roles) for p in self.HSE_CORE_TITLE_PATTERNS) and any(w in roles for w in ["manager", "lead", "head", "director"])
+            if not leadership:
+                sen_score = min(sen_score, 8)
+                missing_requirements.append("Confirmed HSE management/leadership role evidence needs review.")
+            required_years = re.search(r"\b(\d{1,2})\+?\s*(?:years|yrs)\b", desc_lower)
+            if required_years and (profile.get("experience_years") or 0) < int(required_years.group(1)):
+                sen_score = min(sen_score, 5)
+                missing_requirements.append("Advertised experience exceeds confirmed total industrial experience.")
+            reasons.append(f"Profile-based seniority credit: {sen_score}/20. Total industrial years are not treated as years of HSE leadership.")
         breakdown["seniority"] = sen_score
 
         # 3. Verified HSE Technical Competencies (Max: 25)
@@ -356,8 +375,13 @@ class HSEJobMatcher:
                     matched = True
                     break
             if matched:
-                matched_skills_count += 1
-                matching_skills.append(skill_name)
+                candidate_text = json.dumps({k: profile.get(k) for k in ("skills", "employment_history", "summary", "achievements")}, ensure_ascii=False).lower() if profile is not None else ""
+                evidenced = profile is None or any(re.search(p, candidate_text) for p in patterns)
+                if evidenced:
+                    matched_skills_count += 1
+                    matching_skills.append(skill_name)
+                else:
+                    missing_requirements.append(f"Candidate evidence needed: {skill_name}")
             else:
                 if skill_name in ["ISO 14001 / ISO 45001", "Incident Investigation & RCA", "Risk Assessment & Management"]:
                     missing_requirements.append(f"Explicit mention of {skill_name}")
@@ -365,15 +389,17 @@ class HSEJobMatcher:
         skills_ratio = min(1.0, (matched_skills_count / 6.0))
         skills_score = int(25 * skills_ratio)
         breakdown["technical_skills"] = skills_score
-        reasons.append(f"Technical Competencies (+{skills_score}/25 pts): {matched_skills_count} verified competencies identified ({', '.join(matching_skills[:3])}...).")
+        reasons.append(f"Technical Competencies (+{skills_score}/25 pts): {matched_skills_count} vacancy/profile competency overlaps identified ({', '.join(matching_skills[:3])}...).")
 
         # 4. Industry Alignment (Max: 10)
         matched_ind_count = 0
+        industry_evidence = json.dumps({k: profile.get(k) for k in ("employment_history", "summary", "skills", "achievements")}).lower() if profile is not None else ""
         for ind_name, patterns in self.INDUSTRY_MAP.items():
-            for pat in patterns:
-                if re.search(pat, full_lower):
+            if any(re.search(pat, full_lower) for pat in patterns):
+                if profile is None or any(re.search(pat, industry_evidence) for pat in patterns):
                     matched_ind_count += 1
-                    break
+                else:
+                    missing_requirements.append("Candidate industry evidence needed: " + ind_name)
 
         if matched_ind_count >= 2:
             ind_score = 10
@@ -382,41 +408,39 @@ class HSEJobMatcher:
             ind_score = 7
             reasons.append(f"Industry Alignment (+{ind_score}/10 pts): General multinational matrix corporate environment.")
         else:
-            ind_score = 3
-            reasons.append(f"Industry Alignment (+{ind_score}/10 pts): Baseline industrial application.")
+            ind_score = 3 if profile is None else 0
+            reasons.append(f"Industry Alignment (+{ind_score}/10 pts): No confirmed industry overlap supplied; review required.")
         breakdown["industry"] = ind_score
 
-        # 5. Educational Qualifications & Credentials (Max: 10)
-        matched_quals_count = 0
-        for qual_name, patterns in self.QUAL_MAP.items():
-            matched = False
-            for pat in patterns:
-                if re.search(pat, full_lower):
-                    matched = True
-                    break
-            if matched:
-                matched_quals_count += 1
-                matching_qualifications.append(qual_name)
-
-        if matched_quals_count >= 2:
-            qual_score = 10
-            reasons.append(f"Education & Credentials (+{qual_score}/10 pts): Satisfies M.Tech/B.Tech Engineering and certified Lead Auditor requirements.")
-        elif matched_quals_count == 1:
-            qual_score = 7
-            reasons.append(f"Education & Credentials (+{qual_score}/10 pts): Key engineering degree / safety certification required.")
-        else:
-            if "degree" in full_lower or "bachelor" in full_lower or "master" in full_lower:
-                qual_score = 5
-                matching_qualifications.append("General Engineering / Technical Degree requirement met")
-                reasons.append(f"Education & Credentials (+{qual_score}/10 pts): General technical degree requirement met by candidate's M.Tech/B.Tech.")
+        # Qualifications must be supported by the candidate, not just JD keywords.
+        academic = " ".join(profile.get("qualifications", [])).lower() if profile else ""
+        credentials = " ".join(profile.get("certifications", [])).lower() if profile else ""
+        evidenced_quals = []
+        for name, patterns in self.QUAL_MAP.items():
+            if not any(re.search(p, full_lower) for p in patterns): continue
+            candidate = credentials if "Auditor" in name else academic
+            # A different engineering degree is not evidence of a specific discipline.
+            if "Environmental" in name:
+                present = "environmental engineering" in candidate and "environmental engineering" in full_lower
+            elif "Mechanical" in name:
+                present = "mechanical engineering" in candidate and "mechanical engineering" in full_lower
+            elif "Industrial Safety" in name:
+                present = bool(re.search(r"diploma(?: in)? industrial safety|diploma in safety", candidate)) and bool(re.search(r"industrial safety|diploma in safety", full_lower))
             else:
-                qual_score = 3
-                reasons.append(f"Education & Credentials (+{qual_score}/10 pts): Baseline qualification points.")
+                present = bool(re.search(r"\b(?:lead auditor|certified auditor|auditor training)\b", candidate))
+            if present:
+                evidenced_quals.append(name)
+                matching_qualifications.append(name + " — profile evidence; exact employer requirement needs review")
+            else:
+                missing_requirements.append("Candidate qualification evidence needed: " + name)
+        qual_score = min(10, len(evidenced_quals) * 5)
         breakdown["qualifications"] = qual_score
+        reasons.append(f"Education & Credentials (+{qual_score}/10 pts): {len(evidenced_quals)} relevant profile evidence categories. No license, degree equivalence or auditor certification is inferred from the vacancy.")
 
         # 6. Location Preference (Max: 10)
-        target_tier1 = ["India", "Singapore"]
-        target_tier2 = ["Germany", "Netherlands", "Ireland", "Australia"]
+        configured_countries = target_countries if target_countries is not None else (profile.get("target_countries") if profile is not None else None)
+        target_tier1 = configured_countries if configured_countries is not None else ["India", "Singapore"]
+        target_tier2 = [] if configured_countries is not None else ["Germany", "Netherlands", "Ireland", "Australia"]
         target_tier3 = ["United Kingdom", "Switzerland", "France", "Sweden"]
         c_norm = (country or "").strip()
 
@@ -457,14 +481,33 @@ class HSEJobMatcher:
             for pat in self.SPONSORSHIP_POSITIVE:
                 if re.search(pat, full_lower):
                     sponsorship_status = "Confirmed"
-                    reasons.append("Work Authorization: Job posting explicitly confirms visa sponsorship or relocation package.")
+                    reasons.append("Work Authorization: Job posting explicitly states visa sponsorship. Personal eligibility still requires review.")
                     break
         if sponsorship_status == "Unknown":
             reasons.append("Work Authorization: Sponsorship status is Unknown (requires employer confirmation; never assumed confirmed).")
 
         # Step 4: Calculate Total Score
-        total_score = occ_score + sen_score + skills_score + ind_score + qual_score + loc_score
-        total_score = max(0, min(100, total_score))
+        if weights is None:
+            total_score = sum(breakdown.values())
+        else:
+            components = {
+                "experience_seniority": ("seniority", sen_score / 20),
+                "hse_technical_skills": ("technical_skills", skills_score / 25),
+                "qualifications": ("qualifications", qual_score / 10),
+                "industry_relevance": ("industry", ind_score / 10),
+                "location_international": ("location", loc_score / 10),
+                "employment_preferences": ("employment", 1.0 if is_permanent_fulltime else 0.0),
+            }
+            supplied = {k: float(weights.get(k, 0)) for k in components}
+            if any(v < 0 or v > 100 for v in supplied.values()) or sum(supplied.values()) <= 0:
+                raise ValueError("Scoring weights must be nonnegative with a positive total.")
+            # Keep occupational gating/25-point relevance independent of user tuning.
+            weighted = {name: 75 * supplied[key] / sum(supplied.values()) * ratio
+                        for key, (name, ratio) in components.items()}
+            breakdown = {"occupational_relevance": occ_score, **{k: round(v, 4) for k, v in weighted.items()}}
+            total_score = occ_score + sum(weighted.values())
+            reasons.append("Configured weights distribute the 75 fit points after the independent occupational gate. Weighted breakdown: " + json.dumps(breakdown, sort_keys=True))
+        total_score = max(0, min(100, round(total_score)))
 
         # Step 5: Configurable Match Level Thresholds
         if total_score >= 85:

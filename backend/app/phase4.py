@@ -124,7 +124,9 @@ def fingerprint(job, profile):
     vacancy = {name: getattr(job, name) for name in (
         "source", "source_job_id", "company", "title", "location", "city", "country",
         "employment_type", "is_permanent_fulltime", "description", "url", "is_active")}
-    return hashlib.sha256(json.dumps([vacancy, fields], sort_keys=True, default=str).encode()).hexdigest()
+    from ..services.matching_context import POLICY_VERSION, match_options
+    options = match_options(profile)
+    return hashlib.sha256(json.dumps([vacancy, fields, options, POLICY_VERSION], sort_keys=True, default=str).encode()).hexdigest()
 
 def assessment(db, job, a=None):
     p = profile_for(db)
@@ -303,6 +305,7 @@ def approve(application_id: int, payload: Approve, db: Session = Depends(get_db)
     if result["overall_status"] == "not_eligible": fail("Not eligible.")
     if result["overall_status"] != "suitable" and not payload.acknowledge_unknowns:
         fail("Review and explicitly acknowledge unresolved eligibility information.")
+    a.eligibility_status = result["overall_status"]
     prep["approval_digest"] = snapshot(db, a)
     a.application_questions_json = json.dumps(prep)
     a.user_approved = True

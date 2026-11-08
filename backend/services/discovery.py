@@ -5,7 +5,7 @@ from datetime import datetime, timezone
 from typing import Dict, Any, List, Optional
 from sqlalchemy.orm import Session
 
-from ..app.models import Job, EmployerBoard, SearchHistory, SearchPreference
+from ..app.models import Job, EmployerBoard, SearchHistory, SearchPreference, UserProfile
 from ..connectors.greenhouse import GreenhouseConnector
 from ..connectors.lever import LeverConnector
 from ..connectors.base import RawJob
@@ -106,173 +106,105 @@ def is_hse_relevant(title: str, description: str) -> bool:
 
     return any(re.search(p, desc_sample) for p in hse_desc_patterns)
 
+def belongs_to_board(job, board):
+    """Reconcile only native URLs with provable ownership; never guess custom links."""
+    from urllib.parse import urlsplit, unquote
+    if job.source != board.platform.lower() or job.company != board.company_name:
+        return False
+    parsed = urlsplit(job.url)
+    domains = {"greenhouse": {"boards.greenhouse.io", "job-boards.greenhouse.io"},
+               "lever": {"jobs.lever.co"}}
+    if parsed.hostname not in domains.get(board.platform.lower(), set()): return False
+    parts = [unquote(p) for p in parsed.path.split("/") if p]
+    return bool(parts and parts[0] == board.board_token)
+
+
 async def run_discovery_service(db: Session, board_id: Optional[int] = None) -> Dict[str, Any]:
-    """
-    Execute job discovery run across configured boards.
-    Handles duplicate detection, score recalculation, and graceful error recovery.
-    """
+    """Refresh complete snapshots transactionally; preserve failed/ambiguous sources."""
+    from .matching_context import match_options, apply_score
     init_default_boards(db)
-    pref = init_search_preferences(db)
-    weights = json.loads(pref.scoring_weights)
-
+    init_search_preferences(db)
+    profile = db.query(UserProfile).first()
+    options = match_options(profile, db)
     matcher = HSEJobMatcher()
-
-    query = db.query(EmployerBoard).filter(EmployerBoard.is_enabled == True)
-    if board_id:
-        query = query.filter(EmployerBoard.id == board_id)
+    query = db.query(EmployerBoard).filter(EmployerBoard.is_enabled.is_(True))
+    if board_id: query = query.filter(EmployerBoard.id == board_id)
     boards = query.all()
-
-    # Record search history entry
-    history_entry = SearchHistory(
-        started_at=datetime.utcnow(),
-        status="running",
-        boards_searched=len(boards)
-    )
-    db.add(history_entry)
-    db.commit()
-    db.refresh(history_entry)
-
-    total_found = 0
-    total_new = 0
-    total_updated = 0
-    errors: List[str] = []
-
+    history_entry = SearchHistory(started_at=datetime.utcnow(), status="running", boards_searched=len(boards))
+    db.add(history_entry); db.commit(); db.refresh(history_entry)
+    total_found = total_new = total_updated = total_inactive = successful_boards = 0
+    errors = []
     for board in boards:
-        connector = None
-        if board.platform.lower() == "greenhouse":
-            connector = GreenhouseConnector(board_token=board.board_token, company_name=board.company_name)
-        elif board.platform.lower() == "lever":
-            connector = LeverConnector(board_token=board.board_token, company_name=board.company_name)
-        else:
-            logger.warning(f"Unsupported platform '{board.platform}' for board '{board.company_name}'.")
+        platform = board.platform.lower()
+        cls = {"greenhouse": GreenhouseConnector, "lever": LeverConnector}.get(platform)
+        if cls is None:
+            errors.append(f"{board.company_name}: unsupported platform {platform}")
             continue
-
+        connector = cls(board_token=board.board_token, company_name=board.company_name)
         board.last_searched_at = datetime.utcnow()
-
         try:
-            raw_jobs: List[RawJob] = await connector.fetch_jobs()
-            board.last_status = "success"
-            board.last_job_count = len(raw_jobs)
-            
-            for raw_job in raw_jobs:
-                # 1. Relevance check
-                if not is_hse_relevant(raw_job.title, raw_job.description):
-                    continue
-
-                # 2. Exclusions (junior safety officers, internships, temp, freelance)
-                excluded, reason = matcher.is_excluded(raw_job.title, raw_job.description, raw_job.employment_type)
-                if excluded:
-                    logger.debug(f"Skipping {raw_job.title} at {raw_job.company}: {reason}")
-                    continue
-
-                total_found += 1
-
-                # 3. Evaluate match score
-                match_result = matcher.evaluate(
-                    title=raw_job.title,
-                    location=raw_job.location,
-                    country=raw_job.country,
-                    city=raw_job.city,
-                    employment_type=raw_job.employment_type,
-                    is_permanent_fulltime=raw_job.is_permanent_fulltime,
-                    description=raw_job.description,
-                    weights=weights
-                )
-
-                # 4. Deduplication
-                existing = db.query(Job).filter(
-                    Job.source == raw_job.source,
-                    Job.source_job_id == raw_job.source_job_id
-                ).first()
-
-                # Fallback URL deduplication if ID differs
-                if not existing and raw_job.url:
-                    existing = db.query(Job).filter(Job.url == raw_job.url).first()
-
-                if existing:
-                    # Update fields while preserving user application status and saved flag
+            raw_jobs = await connector.fetch_jobs()
+            # Defense in depth for future connectors: invalid snapshots cannot close jobs.
+            if not isinstance(raw_jobs, list) or any(not isinstance(j, RawJob) or not j.source_job_id or j.source_job_id == "None" or not j.url for j in raw_jobs):
+                raise ValueError("Incomplete or invalid job snapshot.")
+            seen = {j.source_job_id for j in raw_jobs}
+            seen_urls = {j.url for j in raw_jobs}
+            found = new = updated = inactive = 0
+            notifications = []
+            with db.begin_nested():
+                for raw in raw_jobs:
+                    existing = db.query(Job).filter(Job.source == raw.source, Job.source_job_id == raw.source_job_id).first()
+                    if existing is None:
+                        existing = db.query(Job).filter(Job.url == raw.url).first()
+                    excluded, _ = matcher.is_excluded(raw.title, raw.description, raw.employment_type)
+                    relevant = is_hse_relevant(raw.title, raw.description) and not excluded
+                    if existing is None and not relevant: continue
+                    result = matcher.evaluate(title=raw.title, location=raw.location, country=raw.country, city=raw.city,
+                        employment_type=raw.employment_type, is_permanent_fulltime=raw.is_permanent_fulltime,
+                        description=raw.description, **options)
+                    if relevant: found += 1
+                    if existing is None:
+                        existing = Job(source=raw.source, source_job_id=raw.source_job_id, application_status="Discovered", is_saved=False)
+                        db.add(existing); new += 1
+                    else:
+                        updated += 1
+                    for field in ("company", "title", "location", "city", "country", "employment_type", "is_permanent_fulltime",
+                                  "description", "raw_description_html", "url", "posted_date"):
+                        setattr(existing, field, getattr(raw, field))
+                    existing.normalized_title = raw.title
                     existing.last_verified_at = datetime.utcnow()
-                    existing.title = raw_job.title
-                    existing.location = raw_job.location
-                    existing.city = raw_job.city
-                    existing.country = raw_job.country
-                    existing.employment_type = raw_job.employment_type
-                    existing.is_permanent_fulltime = raw_job.is_permanent_fulltime
-                    existing.description = raw_job.description
-                    existing.match_score = match_result.score
-                    existing.match_level = match_result.level
-                    existing.match_reasons = json.dumps(match_result.reasons)
-                    existing.matching_qualifications = json.dumps(match_result.matching_qualifications)
-                    existing.matching_experience = json.dumps(match_result.matching_experience)
-                    existing.matching_skills = json.dumps(match_result.matching_skills)
-                    existing.missing_requirements = json.dumps(match_result.missing_requirements)
-                    existing.location_suitability = match_result.location_suitability
-                    existing.sponsorship_status = match_result.sponsorship_status
                     existing.is_active = True
-                    total_updated += 1
-                else:
-                    new_job = Job(
-                        source=raw_job.source,
-                        source_job_id=raw_job.source_job_id,
-                        company=raw_job.company,
-                        title=raw_job.title,
-                        normalized_title=raw_job.title,
-                        location=raw_job.location,
-                        city=raw_job.city,
-                        country=raw_job.country,
-                        employment_type=raw_job.employment_type,
-                        is_permanent_fulltime=raw_job.is_permanent_fulltime,
-                        description=raw_job.description,
-                        raw_description_html=raw_job.raw_description_html,
-                        url=raw_job.url,
-                        posted_date=raw_job.posted_date,
-                        discovered_at=datetime.utcnow(),
-                        last_verified_at=datetime.utcnow(),
-                        is_active=True,
-                        match_score=match_result.score,
-                        match_level=match_result.level,
-                        match_reasons=json.dumps(match_result.reasons),
-                        matching_qualifications=json.dumps(match_result.matching_qualifications),
-                        matching_experience=json.dumps(match_result.matching_experience),
-                        matching_skills=json.dumps(match_result.matching_skills),
-                        missing_requirements=json.dumps(match_result.missing_requirements),
-                        location_suitability=match_result.location_suitability,
-                        sponsorship_status=match_result.sponsorship_status,
-                        application_status="Discovered",
-                        is_saved=False
-                    )
-                    db.add(new_job)
-                    total_new += 1
-                    if match_result.score >= 85:
-                        try:
-                            check_and_notify_high_match_job(db, new_job)
-                        except Exception as n_err:
-                            logger.warning(f"Notification error: {n_err}")
-
+                    apply_score(existing, result)
+                    if result.score >= 85: notifications.append(existing)
+                # Never infer ownership from company name when multiple boards share it.
+                count = db.query(EmployerBoard).filter(EmployerBoard.company_name == board.company_name,
+                    EmployerBoard.platform == board.platform).count()
+                if count == 1:
+                    for job in db.query(Job).filter(Job.source == platform, Job.company == board.company_name, Job.is_active.is_(True)).all():
+                        if belongs_to_board(job, board) and job.source_job_id not in seen and job.url not in seen_urls:
+                            job.is_active = False
+                            inactive += 1
+                board.last_status = "success"
+                board.last_job_count = len(raw_jobs)
             db.commit()
-
+            successful_boards += 1
+            total_found += found; total_new += new; total_updated += updated; total_inactive += inactive
+            # Notifications cannot partially commit the source refresh transaction.
+            for job in notifications:
+                try: check_and_notify_high_match_job(db, job)
+                except Exception as exc:
+                    db.rollback(); logger.warning("Notification dispatch failed: %s", exc)
         except Exception as exc:
-            err_msg = f"{board.company_name} ({board.platform}): {str(exc)}"
-            logger.error(f"Error discovering jobs for {err_msg}")
+            db.rollback()
+            message = f"{board.company_name} ({platform}): {exc}"
+            logger.error(message); errors.append(message)
+            board.last_searched_at = datetime.utcnow()
             board.last_status = f"error: {str(exc)[:50]}"
-            errors.append(err_msg)
             db.commit()
-
-    # Update history run
     history_entry.completed_at = datetime.utcnow()
-    history_entry.status = "success" if not errors or total_found > 0 else "failed"
-    history_entry.jobs_found = total_found
-    history_entry.jobs_new = total_new
-    history_entry.jobs_updated = total_updated
-    if errors:
-        history_entry.error_message = "; ".join(errors)
+    history_entry.status = "success" if successful_boards else "failed"
+    history_entry.jobs_found = total_found; history_entry.jobs_new = total_new; history_entry.jobs_updated = total_updated
+    history_entry.error_message = "; ".join(errors) or None
     db.commit()
-
-    return {
-        "status": history_entry.status,
-        "boards_searched": len(boards),
-        "jobs_found": total_found,
-        "jobs_new": total_new,
-        "jobs_updated": total_updated,
-        "errors": errors
-    }
+    return dict(status=history_entry.status, boards_searched=len(boards), jobs_found=total_found,
+                jobs_new=total_new, jobs_updated=total_updated, jobs_inactivated=total_inactive, errors=errors)

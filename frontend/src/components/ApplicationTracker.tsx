@@ -32,6 +32,12 @@ export const ApplicationTracker: React.FC<ApplicationTrackerProps> = ({
     { id: "Closed", label: "Closed / Archived", color: "border-slate-700 bg-slate-800/20 text-slate-400" }
   ];
 
+  const laneFor = (status: string): string => ({
+    "Shortlisted": "Saved", "Documents Prepared": "Ready to Apply", "Ready For Review": "Ready to Apply",
+    "In Progress": "Interested", "Submitted": "Applied", "Follow Up Due": "Applied",
+    "Interview Scheduled": "Interview", "Offer Received": "Offer", "Rejected": "Closed", "Withdrawn": "Closed"
+  } as Record<string,string>)[status] || status;
+
   const getScoreBadge = (score: number) => {
     if (score >= 85) return "bg-emerald-500/20 text-emerald-300 border-emerald-500/30";
     if (score >= 75) return "bg-blue-500/20 text-blue-300 border-blue-500/30";
@@ -53,14 +59,14 @@ export const ApplicationTracker: React.FC<ApplicationTrackerProps> = ({
           </p>
         </div>
         <span className="text-xs bg-slate-800 px-3 py-1.5 rounded-lg border border-slate-700 text-slate-300 font-medium">
-          Total in Active Pipeline: {jobs.filter(j => j.application_status !== "Discovered").length}
+          Tracked opportunities: {jobs.filter(j => j.application_status !== "Discovered").length}
         </span>
       </div>
 
       {/* Kanban Board Container */}
       <div className="flex space-x-4 overflow-x-auto pb-6">
         {lanes.map((lane) => {
-          const laneJobs = jobs.filter((j) => j.application_status === lane.id);
+          const laneJobs = jobs.filter((j) => laneFor(j.application_status) === lane.id);
 
           return (
             <div
@@ -113,18 +119,20 @@ export const ApplicationTracker: React.FC<ApplicationTrackerProps> = ({
                       </div>
                     )}
 
+                    {!job.is_active && <p className="text-xs text-amber-300">Not in the latest source snapshot; history retained.</p>}
+                    <p className="text-xs text-slate-400">{job.application_status}</p>
                     {/* Move Status Selector */}
                     <div className="pt-2 border-t border-slate-800/60 flex items-center justify-between" onClick={(e) => e.stopPropagation()}>
                       <label className="text-[10px] text-slate-500 font-medium">Move to:</label>
-                      <select
-                        value={job.application_status}
+                      {job.managed_application ? <span className="text-xs text-indigo-300">Update in Application Control Center</span> : <select
+                        value={laneFor(job.application_status)}
                         onChange={(e) => onStatusChange(job.id, e.target.value)}
                         className="bg-slate-900 text-[10px] font-medium text-slate-300 px-2 py-0.5 rounded border border-slate-800 focus:outline-none focus:border-blue-500"
                       >
                         {lanes.map((l) => (
                           <option key={l.id} value={l.id}>{l.label}</option>
                         ))}
-                      </select>
+                      </select>}
                     </div>
                   </div>
                 ))}
