@@ -1,6 +1,36 @@
 # HSE Career Agent — Phase 4
 
-Private Windows application for discovering HSE vacancies, reviewing fit, preparing truthful application documents and tracking manual submissions. No paid service is required. Gemini job matching is optional; document generation uses reviewed profile facts locally.
+Private Windows and macOS application for discovering HSE vacancies, reviewing fit, preparing truthful application documents and tracking manual submissions. No paid service is required. Gemini job matching is optional; document generation uses reviewed profile facts locally.
+
+## macOS setup and daily use
+
+Phase 4 is on `feature/phase4-assisted-applications`. After pulling that branch:
+
+```bash
+# First-time setup or dependency update (existing data is preserved):
+./SETUP_HSE_AGENT.command
+# Start both services, check readiness, then open the dashboard:
+./START_HSE_AGENT.command
+# Stop only the processes created by this launcher:
+./STOP_HSE_AGENT.command
+```
+
+The `.command` files can also be opened from Finder. Keep the startup Terminal window open while using the app; Control+C stops both managed services. If your existing manually launched app already occupies port 3000 or 8000, the launcher reports that and leaves it running. Stop it in its original terminal before using the new launcher. Logs are in `data/logs/backend.log` and `data/logs/frontend.log` (or your `HSE_DATA_DIR`). The frontend must be built first; the already-running `npm run dev` workflow remains available.
+
+Use Python 3.12 to create `backend/venv` and a compatible installed Node.js. Setup uses an existing Mac virtual environment if present. A Windows virtual environment cannot be reused on Mac.
+
+### Mac follow-up reminders
+
+```bash
+# Enable this project's user-only LaunchAgent (no sudo):
+./SETUP_REMINDERS.command
+# Disable it:
+backend/venv/bin/python scripts/macos_reminders.py remove
+```
+
+Reminders check every 15 minutes while signed in and awake, with the same quiet hours and duplicate suppression as Windows. The app uses native macOS scripting notifications; macOS notification permissions and Focus settings may suppress display. Installation is explicit and is not performed by ordinary application startup. After moving the repository, remove the old task before moving it, then install it again at the new path. Notification dispatch and launchd registration require final verification on a real Mac; portable tests mock these system calls.
+
+The clone includes source, not your old Windows jobs/CVs/packages. If you want those records, stop both copies, back up and copy the existing `data` directory privately; preserve `hse_career.db`. Old absolute Windows document paths may need package regeneration. This update does not transfer or rewrite personal records.
 
 ## Windows setup
 

@@ -2,10 +2,10 @@
 from datetime import datetime
 from sqlalchemy import text
 from backend.app.models import FollowUpReminder, ReminderDelivery
-from backend.services.notification_service import send_windows_notification, is_quiet_hours
+from backend.services.notification_service import send_desktop_notification, is_quiet_hours
 
 
-def dispatch_due_reminders(db, notify=send_windows_notification, now=None):
+def dispatch_due_reminders(db, notify=send_desktop_notification, now=None):
     now = now or datetime.utcnow()
     if is_quiet_hours(): return 0
     count = 0

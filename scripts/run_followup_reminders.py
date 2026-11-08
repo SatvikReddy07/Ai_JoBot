@@ -1,4 +1,4 @@
-"""Run via Windows Task Scheduler; no email or external network activity."""
+"""Run via macOS launchd or Windows Task Scheduler; no email or external network activity."""
 import sys
 from pathlib import Path
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))

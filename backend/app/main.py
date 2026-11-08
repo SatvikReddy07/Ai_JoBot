@@ -44,7 +44,7 @@ from ..services.package_service import (
     create_application_package, update_document_content, approve_package,
     format_package_response, PACKAGES_DIR
 )
-from ..services.notification_service import check_and_notify_high_match_job, send_windows_notification
+from ..services.notification_service import check_and_notify_high_match_job, send_desktop_notification
 from ..services.cv_generator import check_pdf_converter_availability
 
 # Setup logger
@@ -1139,7 +1139,7 @@ def download_package_file(
 # 31. Test Windows Notification
 @app.post("/api/notifications/test")
 def test_notification():
-    success = send_windows_notification(
+    success = send_desktop_notification(
         title="🎯 HSE Career Agent - High Match Alert",
         message="Test alert: Global HSE Manager vacancy identified (Score: 92/100). Ready in Application Studio."
     )

@@ -1,4 +1,5 @@
 import os
+import sys
 import subprocess
 import logging
 from datetime import datetime
@@ -49,6 +50,23 @@ $toast = [Windows.UI.Notifications.ToastNotification]::new($template)
         logger.warning(f"Could not dispatch Windows toast notification: {exc}")
         return False
 
+def send_desktop_notification(title: str, message: str) -> bool:
+    """Dispatch native notifications without interpolating user content as code."""
+    if sys.platform == "win32":
+        return send_windows_notification(title, message)
+    if sys.platform == "darwin":
+        script = ("function run(argv) { var app = Application.currentApplication(); "
+                  "app.includeStandardAdditions = true; "
+                  "app.displayNotification(argv[1], {withTitle: argv[0]}); }")
+        try:
+            result = subprocess.run(["/usr/bin/osascript", "-l", "JavaScript", "-e", script,
+                                     "--", title, message], capture_output=True, text=True, timeout=5)
+            return result.returncode == 0
+        except (OSError, subprocess.TimeoutExpired) as exc:
+            logger.warning("Could not dispatch macOS notification: %s", exc)
+    return False
+
+
 def check_and_notify_high_match_job(
     db: Session,
     job: Job,
@@ -82,7 +100,7 @@ def check_and_notify_high_match_job(
     title = f"🎯 High Match HSE Opportunity ({job.match_score}/100)"
     message = f"{job.title} at {job.company} [{job.location}] - {score_type}. Click to open dashboard."
 
-    sent = send_windows_notification(title, message)
+    sent = send_desktop_notification(title, message)
 
     log_entry = DesktopNotificationLog(
         job_id=job.id,
